@@ -1,0 +1,42 @@
+import { db } from "./firebase.js";
+import { collection, addDoc, doc, setDoc, onSnapshot, query, where }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+// ---- Measurements ----
+export function listenMeasurements(uid, cb){
+  return onSnapshot(query(collection(db,"measurements"), where("uid","==",String(uid))),
+    s=>{ const a=[]; s.forEach(d=>a.push(d.data())); a.sort((x,y)=>(x.dateISO||"").localeCompare(y.dateISO||"")); cb(a); },
+    err=>cb(null, err));
+}
+export function listenAllMeasurements(cb){
+  return onSnapshot(collection(db,"measurements"),
+    s=>{ const a=[]; s.forEach(d=>a.push(d.data())); cb(a); },
+    err=>cb(null, err));
+}
+export function saveMeasurement(data){ return addDoc(collection(db,"measurements"), data); }
+
+// ---- Training (per player) ----
+export function listenTraining(uid, cb){
+  return onSnapshot(query(collection(db,"training"), where("uid","==",String(uid))),
+    s=>{ const a=[]; s.forEach(d=>a.push(d.data())); a.sort((x,y)=>(y.ts||0)-(x.ts||0)); cb(a); },
+    err=>cb(null, err));
+}
+export function postTraining(data){ return addDoc(collection(db,"training"), data); }
+
+// ---- Drill / shot library ----
+export function listenDrills(cb){
+  return onSnapshot(collection(db,"drills"),
+    s=>{ const a=[]; s.forEach(d=>a.push({ docId:d.id, ...d.data() })); a.sort((x,y)=>(y.ts||0)-(x.ts||0)); cb(a); },
+    err=>cb(null, err));
+}
+export function addDrill(data){ return addDoc(collection(db,"drills"), data); }
+
+// ---- Goals / targets (one doc per player) ----
+export function listenGoals(uid, cb){
+  return onSnapshot(doc(db,"goals",String(uid)),
+    d=>cb(d.exists()? d.data() : {}),
+    err=>cb(null, err));
+}
+export function setGoal(uid, testId, val){
+  return setDoc(doc(db,"goals",String(uid)), { [testId]: val }, { merge:true });
+}
