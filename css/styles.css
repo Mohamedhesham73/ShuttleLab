@@ -60,3 +60,6 @@ html{-webkit-text-size-adjust:100%;}
   /* keep the tab row on one swipeable line if it gets crowded */
   .tabs-scroll{flex-wrap:nowrap;overflow-x:auto;}
 }
+
+html, body { overflow-x: hidden; width: 100%; }
+img { max-width: 100%; height: auto; }
