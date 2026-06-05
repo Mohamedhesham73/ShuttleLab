@@ -11,7 +11,7 @@ export function renderLog(){
     if(t.multi){
       return `<div style="margin-bottom:14px;"><label>${t.name} (${t.unit}) — attempts, best kept automatically</label>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          ${[1,2,3,4].map(i=>`<input type="number" step="any" inputmode="decimal" placeholder="${i}" data-test="${t.id}" class="att" style="flex:1;min-width:70px;">`).join("")}
+          ${[1,2,3].map(i=>`<input type="number" step="any" inputmode="decimal" placeholder="${i}" data-test="${t.id}" class="att" style="flex:1;min-width:70px;">`).join("")}
         </div></div>`;
     }
     return `<div style="margin-bottom:14px;"><label>${t.name} (${t.unit})</label><input type="number" step="any" inputmode="decimal" placeholder="—" data-single="${t.id}"></div>`;
@@ -23,7 +23,7 @@ export function renderLog(){
 
   view.innerHTML = `<div class="card fade" style="padding:22px;max-width:620px;">
     <div class="disp" style="font-size:18px;margin-bottom:16px;">New test session</div>
-    <div class="grid" style="grid-template-columns:1fr 1fr;margin-bottom:16px;">
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:16px;">
       <div><label>Player</label><select id="logPlayer" ${state.role==="coach"?"":"disabled"}>${opts}</select></div>
       <div><label>Date</label><input type="date" id="logDate" value="${today}"></div>
     </div>

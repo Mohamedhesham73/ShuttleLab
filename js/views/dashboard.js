@@ -43,7 +43,7 @@ export function renderDashboard(){
         <div class="muted" style="font-size:12px;margin-top:3px;">${sub}</div></div>`;
     }).join("");
 
-    const compare = prev ? `<div class="grid fade" style="grid-template-columns:1fr 1fr;margin-bottom:18px;">
+    const compare = prev ? `<div class="grid fade" style="grid-template-columns:repeat(auto-fit,minmax(230px,1fr));margin-bottom:18px;">
         <div class="card" style="padding:16px;"><div class="disp" style="color:var(--up);font-size:14px;margin-bottom:8px;">▲ Better since last test</div>
           ${improved.length?improved.map(x=>`<div style="display:flex;justify-content:space-between;font-size:14px;padding:3px 0;"><span>${x.t.name}</span><span class="num" style="color:var(--up)">+${x.pct}%</span></div>`).join(""):'<span class="muted" style="font-size:13px;">—</span>'}</div>
         <div class="card" style="padding:16px;"><div class="disp" style="color:var(--down);font-size:14px;margin-bottom:8px;">◆ Focus next</div>

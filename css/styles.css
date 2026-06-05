@@ -46,3 +46,17 @@ a{color:var(--brand);}
 @keyframes f{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
 .center{min-height:100vh;display:grid;place-items:center;padding:20px;}
 .scrollx{overflow-x:auto;}.scrollx::-webkit-scrollbar{height:7px;}.scrollx::-webkit-scrollbar-thumb{background:var(--line);border-radius:8px;}
+
+/* ---- Mobile ---- */
+html{-webkit-text-size-adjust:100%;}
+@media (max-width:600px){
+  .wrap{padding:14px 12px 56px;}
+  .logo-txt{font-size:20px;}
+  .tab{padding:8px 11px;font-size:13px;}
+  .card{border-radius:14px;}
+  .mc{padding:12px 13px;}
+  .num{font-size:22px !important;}
+  h1,h2{font-size:20px;}
+  /* keep the tab row on one swipeable line if it gets crowded */
+  .tabs-scroll{flex-wrap:nowrap;overflow-x:auto;}
+}
