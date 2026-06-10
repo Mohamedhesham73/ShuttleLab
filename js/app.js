@@ -7,13 +7,15 @@ import { renderTeam } from "./views/team.js";
 import { renderLog } from "./views/log.js";
 import { renderTraining } from "./views/training.js";
 import { renderLibrary } from "./views/library.js";
+import { renderMatches } from "./views/matches.js";
 
 const VIEWS = {
   dash: renderDashboard,
   team: renderTeam,
   log: renderLog,
   train: renderTraining,
-  library: renderLibrary
+  library: renderLibrary,
+  matches: renderMatches
 };
 
 function renderApp(){

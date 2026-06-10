@@ -1,5 +1,5 @@
 import { db } from "./firebase.js";
-import { collection, addDoc, doc, setDoc, onSnapshot, query, where }
+import { collection, addDoc, doc, setDoc, deleteDoc, onSnapshot, query, where }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 // ---- Measurements ----
@@ -40,3 +40,13 @@ export function listenGoals(uid, cb){
 export function setGoal(uid, testId, val){
   return setDoc(doc(db,"goals",String(uid)), { [testId]: val }, { merge:true });
 }
+
+// ---- Match / film-room videos ----
+export function listenVideos(cb){
+  return onSnapshot(collection(db,"videos"),
+    s=>{ const a=[]; s.forEach(d=>a.push({ docId:d.id, ...d.data() })); a.sort((x,y)=>(y.ts||0)-(x.ts||0)); cb(a); },
+    err=>cb(null, err));
+}
+export function addVideo(data){ return addDoc(collection(db,"videos"), data); }
+export function updateVideo(docId, data){ return setDoc(doc(db,"videos",docId), data, { merge:true }); }
+export function deleteVideo(docId){ return deleteDoc(doc(db,"videos",docId)); }
