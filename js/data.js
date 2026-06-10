@@ -1,6 +1,8 @@
-import { db } from "./firebase.js";
+import { db, storage } from "./firebase.js";
 import { collection, addDoc, doc, setDoc, deleteDoc, onSnapshot, query, where }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { ref, uploadBytesResumable, getDownloadURL }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 
 // ---- Measurements ----
 export function listenMeasurements(uid, cb){
@@ -50,3 +52,17 @@ export function listenVideos(cb){
 export function addVideo(data){ return addDoc(collection(db,"videos"), data); }
 export function updateVideo(docId, data){ return setDoc(doc(db,"videos",docId), data, { merge:true }); }
 export function deleteVideo(docId){ return deleteDoc(doc(db,"videos",docId)); }
+
+// Upload a video file to Firebase Storage; resolves with a streamable URL.
+// onProgress(fraction 0..1) is called as it uploads.
+export function uploadVideoFile(file, onProgress){
+  const safe = (file.name || "video").replace(/[^a-zA-Z0-9._-]/g, "_");
+  const r = ref(storage, "videos/" + Date.now() + "_" + safe);
+  const task = uploadBytesResumable(r, file, { contentType: file.type || "video/mp4" });
+  return new Promise((resolve, reject)=>{
+    task.on("state_changed",
+      s=>{ if(onProgress && s.totalBytes) onProgress(s.bytesTransferred / s.totalBytes); },
+      err=>reject(err),
+      async ()=>{ try{ resolve(await getDownloadURL(task.snapshot.ref)); }catch(e){ reject(e); } });
+  });
+}

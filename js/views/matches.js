@@ -1,6 +1,6 @@
 import { state, esc } from "../core.js";
 import { USERS } from "../config.js";
-import { listenVideos, addVideo, updateVideo, deleteVideo } from "../data.js";
+import { listenVideos, addVideo, updateVideo, deleteVideo, uploadVideoFile } from "../data.js";
 
 // =============================================================
 //  MATCHES — the film-room.
@@ -69,9 +69,14 @@ export function renderMatches(){
           <input id="vTitle" placeholder="Title (e.g. Quarterfinal vs. Hassan — game 2)" style="flex:2;min-width:170px;">
           <select id="vType" style="flex:1;min-width:130px;">${TYPES.map(t=>`<option>${t}</option>`).join("")}</select>
         </div>
-        <input id="vLink" placeholder="Paste a YouTube link or a direct video URL (.mp4)" style="margin-bottom:6px;">
-        <div class="muted" style="font-size:12px;margin-bottom:12px;">Any footage works — match, drill, or multi-shuttle. Upload-from-phone is coming soon; for now use a link.</div>
-        <button class="btn pri" id="vSave">Create</button><div id="vErr" class="err"></div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+          <label class="btn" style="cursor:pointer;"><input id="vFile" type="file" accept="video/*" style="display:none;"> Upload from device</label>
+          <span class="muted" style="font-size:12px;">— or paste a link below</span>
+        </div>
+        <input id="vLink" placeholder="YouTube link or direct video URL (.mp4)" style="margin-bottom:6px;">
+        <div class="muted" style="font-size:12px;margin-bottom:10px;">Any footage works — match, drill, or multi-shuttle. Phone or laptop, both fine.</div>
+        <div id="vProg" class="muted" style="font-size:12px;margin-bottom:10px;display:none;"></div>
+        <button class="btn pri" id="vSave">Create from link</button><div id="vErr" class="err"></div>
       </div>` : ``}
 
       <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(250px,1fr));">
@@ -116,6 +121,27 @@ export function renderMatches(){
           // open it straight away to start adding notes
           openVideo({ docId: ref.id, title, type: document.getElementById("vType").value, source: src, markers: [], assignedTo: [] });
         }catch(e){ errEl.textContent = "Couldn't save: " + (e.message||e); }
+      };
+
+      document.getElementById("vFile").onchange = async function(){
+        const f = this.files && this.files[0];
+        if(!f) return;
+        const errEl = document.getElementById("vErr"); errEl.textContent = "";
+        const prog = document.getElementById("vProg");
+        const title = document.getElementById("vTitle").value.trim() || f.name.replace(/\.[^.]+$/, "");
+        const type = document.getElementById("vType").value;
+        prog.style.display = "block"; prog.textContent = "Uploading… 0%";
+        try{
+          const url = await uploadVideoFile(f, p => { prog.textContent = "Uploading… " + Math.round(p*100) + "%"; });
+          prog.textContent = "Finishing…";
+          const src = { kind: "url", url };
+          const ref = await addVideo({ title, type, source: src, markers: [], assignedTo: [], createdBy: String(state.user.id), ts: Date.now() });
+          form.style.display = "none"; prog.style.display = "none"; this.value = "";
+          openVideo({ docId: ref.id, title, type, source: src, markers: [], assignedTo: [] });
+        }catch(e){
+          prog.style.display = "none";
+          errEl.textContent = "Upload failed: " + (e.message||e) + " — check that Storage is turned on in Firebase.";
+        }
       };
     }
   }
