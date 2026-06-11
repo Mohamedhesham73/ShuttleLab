@@ -8,6 +8,7 @@ import { renderLog } from "./views/log.js";
 import { renderTraining } from "./views/training.js";
 import { renderLibrary } from "./views/library.js";
 import { renderMatches } from "./views/matches.js";
+import { renderLeaderboard } from "./views/leaderboard.js";
 
 const VIEWS = {
   dash: renderDashboard,
@@ -15,7 +16,8 @@ const VIEWS = {
   log: renderLog,
   train: renderTraining,
   library: renderLibrary,
-  matches: renderMatches
+  matches: renderMatches,
+  board: renderLeaderboard
 };
 
 function renderApp(){

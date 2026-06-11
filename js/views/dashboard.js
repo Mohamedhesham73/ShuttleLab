@@ -11,6 +11,24 @@ export function renderDashboard(){
 
   let sessions = [], goals = {}, loadedM = false, chart = null;
 
+  // All-time personal best for a test, plus when it was set, whether it's brand
+  // new this session, and how far it has come from the very first test.
+  const pbInfo = (t)=>{
+    const vals = sessions.filter(s=>s.results?.[t.id]?.best!=null)
+      .map(s=>({ v:s.results[t.id].best, d:s.dateISO }));
+    if(!vals.length) return null;
+    let pb = vals[0];
+    vals.forEach(x=>{ if(t.higher ? x.v>pb.v : x.v<pb.v) pb = x; });
+    const latestDate = sessions[sessions.length-1].dateISO;
+    let priorPB = null;
+    vals.filter(x=>x.d!==latestDate).forEach(x=>{ if(priorPB===null || (t.higher ? x.v>priorPB : x.v<priorPB)) priorPB = x.v; });
+    const isNew = pb.d===latestDate && priorPB!=null && (t.higher ? pb.v>priorPB : pb.v<priorPB);
+    const first = vals[0].v;
+    let improvePct = null;
+    if(first && pb.v!=null) improvePct = r1(t.higher ? (pb.v-first)/Math.abs(first)*100 : (first-pb.v)/Math.abs(first)*100);
+    return { best:pb.v, date:pb.d, isNew, improvePct };
+  };
+
   const draw = ()=>{
     if(!loadedM) return;
     const back = showBack ? `<button class="btn" id="back" style="margin-bottom:14px;padding:7px 12px;font-size:12px;">← Back to team</button>` : "";
@@ -33,6 +51,24 @@ export function renderDashboard(){
         (better?improved:declined).push({ t, pct:r1(pct) });
       });
     }
+
+    // ---- personal bests ----
+    const pbMap = {};
+    TESTS.forEach(t=>{ pbMap[t.id] = pbInfo(t); });
+    const newPBs = TESTS.filter(t=>pbMap[t.id] && pbMap[t.id].isNew);
+    const badge = `<span style="background:linear-gradient(180deg,var(--brand2),var(--brand));color:var(--brandink);font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;margin-left:4px;letter-spacing:.03em;">NEW PB</span>`;
+    const pbCards = TESTS.map(t=>{
+      const p = pbMap[t.id];
+      if(!p) return "";
+      const imp = (p.improvePct!=null && p.improvePct>0.5) ? `<div style="font-size:11px;margin-top:3px;color:var(--up);">+${p.improvePct}% from first</div>` : "";
+      return `<div class="mc"><div class="muted" style="font-size:13px;">${t.name}</div>
+        <div style="display:flex;align-items:baseline;gap:5px;margin-top:2px;flex-wrap:wrap;"><span class="num" style="font-size:24px;font-weight:700;">${p.best}</span><span class="muted" style="font-size:12px;">${t.unit}</span>${p.isNew?badge:""}</div>
+        <div class="muted" style="font-size:11px;margin-top:3px;">best · ${fmtDate(p.date)}</div>${imp}</div>`;
+    }).join("");
+    const pbBlock = `<div class="card fade" style="padding:18px;margin-bottom:18px;">
+      <div class="disp" style="font-size:16px;margin-bottom:12px;">Personal bests</div>
+      <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr));">${pbCards}</div>
+    </div>`;
 
     const cards = TESTS.map(t=>{
       const res = latest.results?.[t.id];
@@ -65,13 +101,16 @@ export function renderDashboard(){
         <button class="btn pri" id="goalSet">Set goal</button></div>`:""}
     </div>`;
 
+    const pbHeadline = newPBs.length ? ` · <span style="color:var(--brand);font-weight:600;">${newPBs.length} new PB${newPBs.length>1?"s":""} this session</span>` : "";
+
     view.innerHTML = `${back}
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
         ${title}
         <button class="btn" id="pdfBtn"><span style="color:var(--brand)">⤓</span> Export PDF</button>
       </div>
-      <div class="muted" style="font-size:13px;margin:6px 0 16px;">Last test ${fmtDate(latest.dateISO)} · ${sessions.length} session${sessions.length>1?"s":""}</div>
+      <div class="muted" style="font-size:13px;margin:6px 0 16px;">Last test ${fmtDate(latest.dateISO)} · ${sessions.length} session${sessions.length>1?"s":""}${pbHeadline}</div>
       ${compare}
+      ${pbBlock}
       <div class="card fade" style="padding:18px;margin-bottom:18px;">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
           <span class="muted" style="font-size:14px;">Trend</span>
@@ -94,12 +133,26 @@ export function renderDashboard(){
 
     const drawTrend = (tid)=>{
       const t = testById(tid);
-      const pts = sessions.filter(s=>s.results?.[tid]?.best!=null).map(s=>({ x:fmtDate(s.dateISO), y:s.results[tid].best }));
+      const ss = sessions.filter(s=>s.results?.[tid]?.best!=null);
+      const labels = ss.map(s=>fmtDate(s.dateISO));
+      const ys = ss.map(s=>s.results[tid].best);
+      const p = pbMap[tid];
+      const pbVal = p ? p.best : null;
+      const pointBg = ys.map(y=> (pbVal!=null && y===pbVal) ? "#ffd34d" : "#9bd534");
+      const pointR  = ys.map(y=> (pbVal!=null && y===pbVal) ? 6 : 4);
+      const datasets = [{ label:"Result", data:ys, borderColor:"#9bd534", backgroundColor:"rgba(155,213,52,.12)", borderWidth:2.5, fill:true, tension:.35, pointRadius:pointR, pointBackgroundColor:pointBg, pointBorderColor:pointBg }];
+      if(pbVal!=null && ys.length>1){
+        datasets.push({ label:"Personal best", data:ys.map(()=>pbVal), borderColor:"rgba(255,211,77,.85)", borderWidth:1.5, borderDash:[6,6], pointRadius:0, fill:false, tension:0 });
+      }
       if(chart) chart.destroy();
       chart = new window.Chart(document.getElementById("trend"), {
         type:"line",
-        data:{ labels:pts.map(p=>p.x), datasets:[{ data:pts.map(p=>p.y), borderColor:"#9bd534", backgroundColor:"rgba(155,213,52,.12)", borderWidth:2.5, fill:true, tension:.35, pointRadius:4, pointBackgroundColor:"#9bd534" }] },
-        options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false}, title:{ display:true, text:(t.higher?"higher is better":"lower is better"), color:"#8f9a86", font:{size:11} } }, scales:{ x:{ grid:{color:"rgba(255,255,255,.06)"}, ticks:{color:"#8f9a86"} }, y:{ grid:{color:"rgba(255,255,255,.06)"}, ticks:{color:"#8f9a86"} } } }
+        data:{ labels, datasets },
+        options:{ responsive:true, maintainAspectRatio:false,
+          plugins:{
+            legend:{ display: pbVal!=null && ys.length>1, labels:{ color:"#8f9a86", boxWidth:12, font:{size:11} } },
+            title:{ display:true, text:(t.higher?"higher is better":"lower is better")+(pbVal!=null?` · PB ${pbVal}${t.unit}`:""), color:"#8f9a86", font:{size:11} } },
+          scales:{ x:{ grid:{color:"rgba(255,255,255,.06)"}, ticks:{color:"#8f9a86"} }, y:{ grid:{color:"rgba(255,255,255,.06)"}, ticks:{color:"#8f9a86"} } } }
       });
     };
     drawTrend(TESTS[0].id);

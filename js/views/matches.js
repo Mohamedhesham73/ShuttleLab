@@ -1,6 +1,6 @@
 import { state, esc } from "../core.js";
 import { USERS } from "../config.js";
-import { listenVideos, addVideo, updateVideo, deleteVideo, uploadVideoFile } from "../data.js";
+import { listenVideos, addVideo, updateVideo, deleteVideo, uploadVideoFile, markVideoWatched } from "../data.js";
 
 // =============================================================
 //  MATCHES — the film-room.
@@ -92,6 +92,7 @@ export function renderMatches(){
             <div style="padding:13px 15px;">
               <div class="disp" style="font-size:16px;margin-bottom:4px;">${esc(v.title||"Untitled")}</div>
               <div class="muted" style="font-size:12px;">${assignLabel(v)}</div>
+              ${coach && audienceIds(v).length ? `<div class="muted" style="font-size:12px;margin-top:3px;">Seen by ${seenCount(v)}/${audienceIds(v).length}</div>` : ""}
             </div>
           </div>`).join("")
           : `<div class="muted">${coach ? "No videos yet — add the first one." : "Your coach hasn't shared any videos yet."}</div>`}
@@ -153,6 +154,41 @@ export function renderMatches(){
       return "Sent to " + names.join(", ");
     }
     return coach ? "Not sent yet" : "";
+  }
+
+  // ---- watched / done tracking helpers ----
+  function audienceIds(v){
+    if(v.assignedTo === "team") return players().map(p=>String(p.id));
+    return Array.isArray(v.assignedTo) ? v.assignedTo.map(String) : [];
+  }
+  function seenCount(v){
+    const wb = v.watchedBy || {};
+    return audienceIds(v).filter(id=>wb[id]).length;
+  }
+  function seenWhen(ts){
+    try{ return new Date(ts).toLocaleDateString(undefined,{ month:"short", day:"numeric" }); }
+    catch(e){ return ""; }
+  }
+  function seenPanelHTML(v){
+    const ids = audienceIds(v);
+    if(!ids.length){
+      return `<div class="card" style="padding:14px;margin-top:16px;">
+        <div class="disp" style="font-size:15px;margin-bottom:8px;">Who's watched</div>
+        <div class="muted" style="font-size:13px;">Send this to a player or the team to start tracking who's watched it.</div></div>`;
+    }
+    const wb = v.watchedBy || {};
+    const rows = ids.map(id=>{
+      const us = USERS.find(x=>String(x.id)===String(id));
+      const nm = us ? us.name : ("#"+id);
+      const w = wb[id];
+      const right = w
+        ? `<span style="color:var(--up);">✓ ${seenWhen(w.ts)}${w.count>1?` · ${w.count}×`:""}</span>`
+        : `<span class="muted">Not yet</span>`;
+      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:14px;"><span>${esc(nm)}</span>${right}</div>`;
+    }).join("");
+    return `<div class="card" style="padding:14px;margin-top:16px;">
+      <div class="disp" style="font-size:15px;margin-bottom:8px;">Who's watched <span class="muted" style="font-size:13px;">· ${seenCount(v)}/${ids.length}</span></div>
+      ${rows}</div>`;
   }
 
   // ---------- DETAIL / FILM-ROOM SCREEN ----------
@@ -228,7 +264,8 @@ export function renderMatches(){
         <div id="flmAssign" style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px;"></div>
         <button class="btn pri" id="flmSaveBtn">Save & send</button>
         <span id="flmSaveMsg" class="muted" style="margin-left:10px;font-size:13px;"></span>
-      </div>` : ``}
+      </div>
+      ${seenPanelHTML(work)}` : ``}
     `;
 
     document.getElementById("backBtn").onclick = ()=>{ stopLoop(); current = null; renderList(); };
@@ -239,6 +276,7 @@ export function renderMatches(){
     const markers = work.markers;
     let media = null, ready = false, dur = 0, cur = 0, lastT = 0, playing = false, raf = null;
     let sel = null, tool = null, drawColor = "#a4dd2b", drawing = null, shownId = null;
+    let recordedWatch = false;
 
     // colour palette for drawings (coach only)
     if(coach){
@@ -412,6 +450,14 @@ export function renderMatches(){
       if(media.setRate) media.setRate(parseFloat(document.getElementById("flmSpd").value)||1);
       media.play();
       document.getElementById("flmPlay").textContent="❚❚ Pause";
+      if(!coach && !recordedWatch){
+        recordedWatch = true;
+        const pid = String(state.user.id);
+        const existing = (work.watchedBy && work.watchedBy[pid]) || {};
+        const payload = { ts: Date.now(), count: (existing.count||0)+1, name: state.name };
+        work.watchedBy = work.watchedBy || {}; work.watchedBy[pid] = payload;
+        try{ markVideoWatched(work.docId, pid, payload); }catch(e){}
+      }
       raf=requestAnimationFrame(loop);
     }
     function pauseV(){ playing=false; if(raf) cancelAnimationFrame(raf); raf=null; if(media&&media.pause) media.pause(); document.getElementById("flmPlay").textContent="▶ Play"; document.getElementById("flmSlow").style.display="none"; }

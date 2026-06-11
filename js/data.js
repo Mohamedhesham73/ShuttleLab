@@ -53,6 +53,11 @@ export function addVideo(data){ return addDoc(collection(db,"videos"), data); }
 export function updateVideo(docId, data){ return setDoc(doc(db,"videos",docId), data, { merge:true }); }
 export function deleteVideo(docId){ return deleteDoc(doc(db,"videos",docId)); }
 
+// Record that a player has watched a video (merges into the video's watchedBy map).
+export function markVideoWatched(docId, playerId, info){
+  return setDoc(doc(db,"videos",docId), { watchedBy: { [String(playerId)]: info } }, { merge:true });
+}
+
 // Upload a video file to Firebase Storage; resolves with a streamable URL.
 // onProgress(fraction 0..1) is called as it uploads.
 export function uploadVideoFile(file, onProgress){
