@@ -32,6 +32,8 @@ export function listenDrills(cb){
     err=>cb(null, err));
 }
 export function addDrill(data){ return addDoc(collection(db,"drills"), data); }
+export function updateDrill(docId, data){ return setDoc(doc(db,"drills",docId), data, { merge:true }); }
+export function deleteDrill(docId){ return deleteDoc(doc(db,"drills",docId)); }
 
 // ---- Goals / targets (one doc per player) ----
 export function listenGoals(uid, cb){
