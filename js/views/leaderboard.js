@@ -4,7 +4,10 @@ import { listenAllMeasurements } from "../data.js";
 
 export function renderLeaderboard(){
   const view = document.getElementById("view");
+  const coach = state.role === "coach";
   let all = [], testId = TESTS[0].id, mode = "best";   // mode: "best" | "latest"
+
+  const ghost = (size)=>`<span style="width:${size}px;height:${size}px;border-radius:50%;background:rgba(255,255,255,.08);display:inline-flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px;flex:0 0 auto;">?</span>`;
 
   // Best (all-time) or latest value for one player on the current test.
   const valueFor = (uid)=>{
@@ -43,23 +46,33 @@ export function renderLeaderboard(){
     const rows = entries.map(e=>{
       const me = String(e.uid)===String(state.user.id);
       const medal = e.rank===1?"#ffd34d":e.rank===2?"#cfd6dd":e.rank===3?"#e0a973":"var(--muted)";
+      // Coach sees everyone; a player sees only their own name — others are hidden.
+      const showName = coach || me;
+      const nameHtml = showName ? `${esc(e.name)}${me?' <span class="muted" style="font-size:11px;">(you)</span>':''}` : `<span class="muted">Player</span>`;
+      const av = showName ? avatar(e.name, e.photo, 32) : ghost(32);
       return `<div class="card" style="display:flex;align-items:center;gap:12px;padding:12px 14px;${me?'border-color:var(--brand);box-shadow:0 0 0 1px var(--brand) inset;':''}">
         <div style="width:26px;text-align:center;font-weight:700;font-size:16px;color:${medal};">${e.rank}</div>
-        ${avatar(e.name, e.photo, 32)}
+        ${av}
         <div style="flex:1;min-width:0;">
-          <div class="disp" style="font-size:15px;">${esc(e.name)}${me?' <span class="muted" style="font-size:11px;">(you)</span>':''}</div>
+          <div class="disp" style="font-size:15px;">${nameHtml}</div>
           <div class="muted" style="font-size:11px;">${mode==="best"?"best":"latest"} · ${fmtDate(e.d)}</div>
         </div>
         <div style="text-align:right;white-space:nowrap;"><span class="num" style="font-size:20px;font-weight:700;${e.rank===1?'color:var(--brand);':''}">${e.v}</span> <span class="muted" style="font-size:12px;">${t.unit}</span></div>
       </div>`;
     }).join("");
 
-    const noRows = noData.length
-      ? `<div class="muted" style="font-size:12px;margin-top:12px;">No result yet: ${noData.map(u=>esc(u.name)).join(", ")}</div>`
-      : "";
+    let noRows = "";
+    if(noData.length){
+      noRows = coach
+        ? `<div class="muted" style="font-size:12px;margin-top:12px;">No result yet: ${noData.map(u=>esc(u.name)).join(", ")}</div>`
+        : `<div class="muted" style="font-size:12px;margin-top:12px;">${noData.length} teammate${noData.length>1?"s":""} haven't logged this test yet.</div>`;
+    }
+
+    const note = coach ? "" : `<div class="muted" style="font-size:12px;margin-bottom:10px;">Names are hidden — you can see the rankings and your own place.</div>`;
 
     view.innerHTML = `
       <div class="logo-txt" style="font-size:20px;margin-bottom:12px;">Team leaderboard</div>
+      ${note}
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
         ${TESTS.map(x=>`<span class="chip ${x.id===testId?"on":""}" data-test="${x.id}">${esc(x.name)}</span>`).join("")}
       </div>
