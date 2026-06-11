@@ -13,18 +13,21 @@ export const firebaseConfig = {
 };
 
 // -------------------------------------------------------------
-//  THE TEAM. Give each person a FAKE email + password (not real
-//  Gmail logins). role is "player" or "coach". The coach sees
-//  everyone and writes training; players see only themselves.
-//  photo is optional — put files in an "imgs" folder, or delete
-//  the photo line and it shows the person's initial.
+//  THE TEAM. Each person signs in with the email listed here.
+//  Passwords now live in Firebase Authentication (Console →
+//  Authentication → Users) — NOT in this file — so they are never
+//  shipped to the browser. Create one Auth user per email below.
+//  role is "player" or "coach". The coach sees everyone and writes
+//  training; players see only themselves. photo is optional — put
+//  files in an "imgs" folder, or delete the photo line to show the
+//  person's initial.
 // -------------------------------------------------------------
 export const USERS = [
-  { id: 1, name: "H",                role: "player", email: "h@shuttlelab.app",      password: "h-1234",     photo: "imgs/H.jpeg" },
-  { id: 2, name: "KOKA",             role: "player", email: "koka@shuttlelab.app",   password: "koka-1234",  photo: "imgs/KOKA.jpeg" },
-  { id: 3, name: "Mahmoud",          role: "player", email: "mahmoud@shuttlelab.app",password: "mah-1234",   photo: "imgs/Mahmoud.jpeg" },
-  { id: 4, name: "Alya El Ghandour", role: "player", email: "alya@shuttlelab.app",   password: "alya-1234",  photo: "imgs/Alya.jpeg" },
-  { id: 9, name: "Ahmed Salah",      role: "coach",  email: "coach@shuttlelab.app",  password: "coach-1234", photo: "imgs/Coach.jpeg" },
+  { id: 1, name: "H",                role: "player", email: "h@shuttlelab.app",       photo: "imgs/H.jpeg" },
+  { id: 2, name: "KOKA",             role: "player", email: "koka@shuttlelab.app",    photo: "imgs/KOKA.jpeg" },
+  { id: 3, name: "Mahmoud",          role: "player", email: "mahmoud@shuttlelab.app", photo: "imgs/Mahmoud.jpeg" },
+  { id: 4, name: "Alya El Ghandour", role: "player", email: "alya@shuttlelab.app",    photo: "imgs/Alya.jpeg" },
+  { id: 9, name: "Ahmed Salah",      role: "coach",  email: "coach@shuttlelab.app",   photo: "imgs/Coach.jpeg" },
 ];
 
 // -------------------------------------------------------------

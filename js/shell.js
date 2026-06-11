@@ -1,10 +1,11 @@
 import { state, navigate, avatar, clearUnsub } from "./core.js";
+import { signOutUser } from "./auth.js";
 
 export function logout(){
-  try{ localStorage.removeItem("sl_uid"); }catch(e){}
   clearUnsub();
   state.user = null;
   if(state._render) state._render();
+  signOutUser().catch(()=>{});
 }
 
 export function header(){

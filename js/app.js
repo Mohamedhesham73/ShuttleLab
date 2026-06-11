@@ -1,5 +1,5 @@
 import { state, clearUnsub } from "./core.js";
-import { USERS } from "./config.js";
+import { watchAuth, userFromEmail, signOutUser } from "./auth.js";
 import { header, wireShell } from "./shell.js";
 import { renderLogin } from "./views/login.js";
 import { renderDashboard } from "./views/dashboard.js";
@@ -30,15 +30,21 @@ function renderApp(){
 // Let any module trigger a re-render via navigate()/login/logout.
 state._render = renderApp;
 
-// Restore the last signed-in user (kept in this browser only).
-(function boot(){
-  let id = null;
-  try{ id = localStorage.getItem("sl_uid"); }catch(e){}
-  const u = id ? USERS.find(x=>String(x.id)===String(id)) : null;
-  if(u){
+// Real auth gate. We render only after Firebase tells us who (if anyone) is
+// signed in. Firebase keeps the session in this browser, so refreshes stay
+// logged in — no manual localStorage handling needed.
+watchAuth((fbUser)=>{
+  if(fbUser){
+    const u = userFromEmail(fbUser.email);
+    if(!u){ signOutUser(); return; }   // signed in, but not on the roster → reject
+    const fresh = !state.user || String(state.user.id) !== String(u.id);
     state.user = u; state.role = u.role; state.name = u.name;
-    state.view = u.role==="coach" ? "team" : "dash";
     state.targetId = String(u.id); state.targetName = u.name;
+    if(fresh) state.view = u.role==="coach" ? "team" : "dash";
+    renderApp();
+  }else{
+    clearUnsub();
+    state.user = null;
+    renderApp();
   }
-  renderApp();
-})();
+});

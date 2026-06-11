@@ -1,5 +1,15 @@
-import { state } from "../core.js";
-import { USERS } from "../config.js";
+import { signIn } from "../auth.js";
+
+function authErr(e){
+  const c = (e && e.code) || "";
+  if(c.includes("invalid-credential") || c.includes("wrong-password") || c.includes("user-not-found"))
+    return "Wrong email or password.";
+  if(c.includes("invalid-email"))      return "That doesn't look like a valid email.";
+  if(c.includes("too-many-requests"))  return "Too many tries — wait a minute, then try again.";
+  if(c.includes("network"))            return "Network problem — check your connection.";
+  if(c.includes("user-disabled"))      return "This account has been disabled.";
+  return "Couldn't sign in. " + ((e && e.message) || "");
+}
 
 export function renderLogin(){
   const root = document.getElementById("root");
@@ -22,20 +32,23 @@ export function renderLogin(){
     </div>
   </div>`;
 
-  const go = ()=>{
+  const go = async ()=>{
     const email = document.getElementById("email").value.trim().toLowerCase();
     const pw = document.getElementById("pw").value;
     const errEl = document.getElementById("loginErr");
+    const btn = document.getElementById("loginBtn");
     errEl.textContent = "";
     if(!email || !pw){ errEl.textContent = "Enter your email and password."; return; }
-    const u = USERS.find(x=>x.email.toLowerCase()===email && x.password===pw);
-    if(!u){ errEl.textContent = "Wrong email or password."; return; }
-    try{ localStorage.setItem("sl_uid", String(u.id)); }catch(e){}
-    state.user = u; state.role = u.role; state.name = u.name;
-    state.view = u.role==="coach" ? "team" : "dash";
-    state.targetId = String(u.id); state.targetName = u.name;
-    if(state._render) state._render();
+    btn.disabled = true; const label = btn.textContent; btn.textContent = "Signing in…";
+    try{
+      await signIn(email, pw);
+      // app.js is watching auth state — it sets up the app and re-renders.
+    }catch(e){
+      btn.disabled = false; btn.textContent = label;
+      errEl.textContent = authErr(e);
+    }
   };
   document.getElementById("loginBtn").onclick = go;
   document.getElementById("pw").addEventListener("keydown", e=>{ if(e.key==="Enter") go(); });
+  document.getElementById("email").addEventListener("keydown", e=>{ if(e.key==="Enter") document.getElementById("pw").focus(); });
 }
