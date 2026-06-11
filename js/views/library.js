@@ -1,4 +1,5 @@
 import { state, esc } from "../core.js";
+import { USERS } from "../config.js";
 import { listenDrills, addDrill, updateDrill, deleteDrill } from "../data.js";
 import { mountSideCourt } from "../sidecourt.js";
 import { mountSoloCourt } from "../solocourt.js";
@@ -6,12 +7,54 @@ import { mountSoloCourt } from "../solocourt.js";
 const CATS = ["Shots","Footwork","Strength","Conditioning","Tactics"];
 
 // Court registry — add a future court (Double / Mix / Drill) by adding ONE line.
-// kind is stored on the drill; the picker, builder and player all read this list.
 const COURTS = [
   { kind:"side", name:"Side Court", blurb:"Side-on 3D view — see each shot's height & arc.", mount:mountSideCourt },
   { kind:"solo", name:"Solo Court", blurb:"Top-down perspective — footwork & shot placement.", mount:mountSoloCourt }
 ];
 const courtBy = kind => COURTS.find(c=>c.kind===kind);
+const playersList = ()=> USERS.filter(u=>u.role==="player");
+
+// "Send to" picker — value is "team" or an array of player ids.
+function makeAssign(initial){
+  let team = (initial===undefined || initial==="team" || (Array.isArray(initial) && initial.length===0));
+  const set = new Set(Array.isArray(initial) ? initial.map(String) : []);
+  if(team) set.clear();
+  return {
+    value(){ return team ? "team" : Array.from(set); },
+    render(){
+      const ps = playersList();
+      return `<div class="muted" style="font-size:12px;margin:2px 0 6px;">Send to</div>
+        <div data-assign style="display:flex;gap:7px;flex-wrap:wrap;">
+          <span class="chip ${team?"on":""}" data-aid="__team">Whole team</span>
+          ${ps.map(p=>`<span class="chip ${(!team&&set.has(String(p.id)))?"on":""}" data-aid="${esc(String(p.id))}">${esc(p.name)}</span>`).join("")}
+        </div>`;
+    },
+    wire(root){
+      root.querySelectorAll("[data-aid]").forEach(el=>el.onclick=()=>{
+        const id = el.dataset.aid;
+        if(id==="__team"){ team=true; set.clear(); }
+        else { team=false; if(set.has(id)) set.delete(id); else set.add(id); if(set.size===0) team=true; }
+        root.querySelectorAll("[data-aid]").forEach(c=>{ const cid=c.dataset.aid; c.classList.toggle("on", cid==="__team" ? team : (!team && set.has(cid))); });
+      });
+    }
+  };
+}
+
+function assignLabel(d){
+  const a = d.assignedTo;
+  if(a===undefined || a==="team") return "Whole team";
+  if(Array.isArray(a) && a.length){
+    return "Sent to " + a.map(id=>{ const u=USERS.find(x=>String(x.id)===String(id)); return u?u.name:"?"; }).join(", ");
+  }
+  return "Whole team";
+}
+function visibleTo(d){
+  if(state.role==="coach") return true;
+  const a = d.assignedTo;
+  if(a===undefined || a==="team") return true;
+  if(Array.isArray(a)) return a.length===0 || a.map(String).includes(String(state.user.id));
+  return true;
+}
 
 export function renderLibrary(){
   const view = document.getElementById("view");
@@ -64,6 +107,7 @@ export function renderLibrary(){
     }
 
     // build / edit
+    const assign = makeAssign(drill ? drill.assignedTo : undefined);
     view.innerHTML = `
       <button class="btn" id="ctBack" style="margin-bottom:14px;padding:7px 12px;font-size:12px;">← Back to library</button>
       <div class="card" style="padding:16px;">
@@ -73,6 +117,7 @@ export function renderLibrary(){
         </div>
         <input id="ctTitle" placeholder="Drill name (e.g. Attack: clear → drop → smash)" style="margin-bottom:12px;" value="${drill?esc(drill.title):""}">
         <div id="ctMount"></div>
+        <div id="ctAssign" style="margin-top:14px;">${assign.render()}</div>
         <div style="display:flex;gap:8px;margin-top:14px;align-items:center;flex-wrap:wrap;">
           <button class="btn pri" id="ctSave">${drill?"Save changes":"Save to library"}</button>
           <button class="btn" id="ctCancel" style="padding:8px 12px;">Cancel</button>
@@ -81,13 +126,14 @@ export function renderLibrary(){
       </div>`;
     document.getElementById("ctBack").onclick = leaveCourt;
     document.getElementById("ctCancel").onclick = leaveCourt;
+    assign.wire(document.getElementById("ctAssign"));
     mounted = entry.mount(document.getElementById("ctMount"), { mode:"edit", points: drill && drill.court && drill.court.points });
     document.getElementById("ctSave").onclick = async ()=>{
       const title = document.getElementById("ctTitle").value.trim();
       const msg = document.getElementById("ctMsg");
       if(!title){ msg.style.color="var(--down)"; msg.textContent="Give the drill a name."; return; }
       if(!mounted.hasShots()){ msg.style.color="var(--down)"; msg.textContent="Add at least one shot first."; return; }
-      const payload = { title, category:"Court", court:{ kind, points:mounted.getPoints() }, ts:Date.now() };
+      const payload = { title, category:"Court", court:{ kind, points:mounted.getPoints() }, assignedTo:assign.value(), ts:Date.now() };
       msg.style.color="var(--muted)"; msg.textContent="Saving…";
       try{
         if(drill && drill.docId) await updateDrill(drill.docId, payload);
@@ -99,8 +145,10 @@ export function renderLibrary(){
 
   // ---------------- LIBRARY LIST ----------------
   const renderList = ()=>{
-    const cats = ["All", ...Array.from(new Set(drills.map(d=>d.category).filter(Boolean)))];
-    const shown = drills.filter(d=>filter==="All" || d.category===filter);
+    const mine = drills.filter(visibleTo);
+    const cats = ["All", ...Array.from(new Set(mine.map(d=>d.category).filter(Boolean)))];
+    const shown = mine.filter(d=>filter==="All" || d.category===filter);
+    const textAssign = makeAssign(undefined);
     view.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
         <div style="display:flex;gap:6px;flex-wrap:wrap;">${cats.map(c=>`<span class="chip ${filter===c?"on":""}" data-cat="${esc(c)}">${esc(c)}</span>`).join("")}</div>
@@ -112,7 +160,8 @@ export function renderLibrary(){
           <select id="dCat" style="flex:1;min-width:120px;">${CATS.map(c=>`<option>${c}</option>`).join("")}</select>
         </div>
         <textarea id="dDesc" rows="3" placeholder="How to do it, reps, focus points…" style="margin-bottom:10px;resize:vertical;"></textarea>
-        <input id="dVideo" placeholder="Video link (optional)" style="margin-bottom:12px;">
+        <input id="dVideo" placeholder="Video link (optional)" style="margin-bottom:10px;">
+        <div id="dAssign" style="margin-bottom:12px;">${textAssign.render()}</div>
         <button class="btn pri" id="dSave">Save to library</button><div id="dErr" class="err"></div>
       </div>`:""}
       <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(230px,1fr));">
@@ -124,6 +173,7 @@ export function renderLibrary(){
             ${isCourt?`<span class="chip" style="display:inline-block;margin:0 0 8px 6px;">${esc(cName)}</span>`:""}
             <div class="disp" style="font-size:18px;margin-bottom:6px;">${esc(d.title)}</div>
             <div class="muted" style="font-size:14px;line-height:1.6;">${esc(d.desc||"")}</div>
+            ${coach?`<div class="muted" style="font-size:12px;margin-top:8px;">${esc(assignLabel(d))}</div>`:""}
             ${isCourt?`<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
                 <button class="btn pri" data-openct="${esc(d.docId)}" style="padding:6px 12px;font-size:13px;">▶ Open court</button>
                 ${coach?`<button class="btn" data-editct="${esc(d.docId)}" style="padding:6px 11px;font-size:12px;">Edit</button>
@@ -141,6 +191,7 @@ export function renderLibrary(){
 
     if(coach){
       const form = document.getElementById("drillForm");
+      textAssign.wire(document.getElementById("dAssign"));
       document.getElementById("addDrillBtn").onclick = ()=>{ form.style.display = form.style.display==="none"?"block":"none"; };
       document.getElementById("addCourtBtn").onclick = openPick;
       document.getElementById("dSave").onclick = async ()=>{
@@ -153,6 +204,7 @@ export function renderLibrary(){
             category: document.getElementById("dCat").value,
             desc: document.getElementById("dDesc").value.trim(),
             videoUrl: document.getElementById("dVideo").value.trim(),
+            assignedTo: textAssign.value(),
             ts: Date.now()
           });
           form.style.display = "none";
