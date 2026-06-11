@@ -1,36 +1,76 @@
 import { state, esc } from "../core.js";
 import { listenDrills, addDrill, updateDrill, deleteDrill } from "../data.js";
 import { mountSideCourt } from "../sidecourt.js";
+import { mountSoloCourt } from "../solocourt.js";
 
 const CATS = ["Shots","Footwork","Strength","Conditioning","Tactics"];
+
+// Court registry — add a future court (Double / Mix / Drill) by adding ONE line.
+// kind is stored on the drill; the picker, builder and player all read this list.
+const COURTS = [
+  { kind:"side", name:"Side Court", blurb:"Side-on 3D view — see each shot's height & arc.", mount:mountSideCourt },
+  { kind:"solo", name:"Solo Court", blurb:"Top-down perspective — footwork & shot placement.", mount:mountSoloCourt }
+];
+const courtBy = kind => COURTS.find(c=>c.kind===kind);
 
 export function renderLibrary(){
   const view = document.getElementById("view");
   const coach = state.role==="coach";
   let drills = [], filter = "All", screen = null, mounted = null;
 
-  const leaveCourt = ()=>{ if(mounted){ try{ mounted.destroy(); }catch(e){} mounted=null; } screen=null; draw(); };
-  const openCourt = (drill, mode)=>{ screen = { drill, mode }; draw(); };
+  const destroyMount = ()=>{ if(mounted){ try{ mounted.destroy(); }catch(e){} mounted=null; } };
+  const leaveCourt = ()=>{ destroyMount(); screen=null; draw(); };
+  const openPick  = ()=>{ screen={ mode:"pick" }; draw(); };
+  const openBuild = (kind, drill)=>{ screen={ mode:"build", kind, drill }; draw(); };
+  const openPlay  = (drill)=>{ screen={ mode:"play", drill }; draw(); };
 
-  // ---------------- COURT BUILD / WATCH SCREEN ----------------
+  // ---------------- COURT PICKER ----------------
+  const renderPick = ()=>{
+    view.innerHTML = `
+      <button class="btn" id="ctBack" style="margin-bottom:14px;padding:7px 12px;font-size:12px;">← Back to library</button>
+      <div class="card" style="padding:18px;">
+        <div class="disp" style="font-size:18px;margin-bottom:4px;">Choose a court</div>
+        <div class="muted" style="font-size:13px;margin-bottom:14px;">More court types are coming — they'll show up here.</div>
+        <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr));">
+          ${COURTS.map(c=>`<button class="card" data-pick="${c.kind}" style="text-align:left;padding:16px;cursor:pointer;border:0.5px solid var(--line);">
+            <div class="disp" style="font-size:16px;margin-bottom:4px;">${esc(c.name)}</div>
+            <div class="muted" style="font-size:13px;line-height:1.5;">${esc(c.blurb)}</div>
+          </button>`).join("")}
+        </div>
+      </div>`;
+    document.getElementById("ctBack").onclick = leaveCourt;
+    view.querySelectorAll("[data-pick]").forEach(el=>el.onclick=()=>openBuild(el.dataset.pick, null));
+  };
+
+  // ---------------- COURT BUILD / WATCH ----------------
   const renderCourtScreen = ()=>{
     const { drill, mode } = screen;
+    const kind = mode==="play" ? (drill.court && drill.court.kind) : screen.kind;
+    const entry = courtBy(kind) || COURTS[0];
+
     if(mode === "play"){
       view.innerHTML = `
         <button class="btn" id="ctBack" style="margin-bottom:14px;padding:7px 12px;font-size:12px;">← Back to library</button>
         <div class="card" style="padding:16px;">
-          <div class="disp" style="font-size:18px;margin-bottom:10px;">${esc(drill.title)}</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+            <div class="disp" style="font-size:18px;">${esc(drill.title)}</div>
+            <span class="chip">${esc(entry.name)}</span>
+          </div>
           <div id="ctMount"></div>
         </div>`;
       document.getElementById("ctBack").onclick = leaveCourt;
-      mounted = mountSideCourt(document.getElementById("ctMount"), { mode:"play", points: drill.court && drill.court.points });
+      mounted = entry.mount(document.getElementById("ctMount"), { mode:"play", points: drill.court && drill.court.points });
       return;
     }
+
     // build / edit
     view.innerHTML = `
       <button class="btn" id="ctBack" style="margin-bottom:14px;padding:7px 12px;font-size:12px;">← Back to library</button>
       <div class="card" style="padding:16px;">
-        <div class="disp" style="font-size:18px;margin-bottom:10px;">${drill ? "Edit court drill" : "New court drill"}</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+          <div class="disp" style="font-size:18px;">${drill ? "Edit court drill" : "New court drill"}</div>
+          <span class="chip on">${esc(entry.name)}</span>
+        </div>
         <input id="ctTitle" placeholder="Drill name (e.g. Attack: clear → drop → smash)" style="margin-bottom:12px;" value="${drill?esc(drill.title):""}">
         <div id="ctMount"></div>
         <div style="display:flex;gap:8px;margin-top:14px;align-items:center;flex-wrap:wrap;">
@@ -41,13 +81,13 @@ export function renderLibrary(){
       </div>`;
     document.getElementById("ctBack").onclick = leaveCourt;
     document.getElementById("ctCancel").onclick = leaveCourt;
-    mounted = mountSideCourt(document.getElementById("ctMount"), { mode:"edit", points: drill && drill.court && drill.court.points });
+    mounted = entry.mount(document.getElementById("ctMount"), { mode:"edit", points: drill && drill.court && drill.court.points });
     document.getElementById("ctSave").onclick = async ()=>{
       const title = document.getElementById("ctTitle").value.trim();
       const msg = document.getElementById("ctMsg");
       if(!title){ msg.style.color="var(--down)"; msg.textContent="Give the drill a name."; return; }
       if(!mounted.hasShots()){ msg.style.color="var(--down)"; msg.textContent="Add at least one shot first."; return; }
-      const payload = { title, category:"Court", court:{ kind:"side", points:mounted.getPoints() }, ts:Date.now() };
+      const payload = { title, category:"Court", court:{ kind, points:mounted.getPoints() }, ts:Date.now() };
       msg.style.color="var(--muted)"; msg.textContent="Saving…";
       try{
         if(drill && drill.docId) await updateDrill(drill.docId, payload);
@@ -78,9 +118,10 @@ export function renderLibrary(){
       <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(230px,1fr));">
         ${shown.length?shown.map(d=>{
           const isCourt = !!d.court;
+          const cName = isCourt ? ((courtBy(d.court.kind)||{}).name || "Court") : "";
           return `<div class="card fade" style="padding:16px;">
             <span class="chip on" style="display:inline-block;margin-bottom:8px;">${esc(d.category||(isCourt?"Court":"Drill"))}</span>
-            ${isCourt?`<span class="chip" style="display:inline-block;margin:0 0 8px 6px;">Side Court</span>`:""}
+            ${isCourt?`<span class="chip" style="display:inline-block;margin:0 0 8px 6px;">${esc(cName)}</span>`:""}
             <div class="disp" style="font-size:18px;margin-bottom:6px;">${esc(d.title)}</div>
             <div class="muted" style="font-size:14px;line-height:1.6;">${esc(d.desc||"")}</div>
             ${isCourt?`<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
@@ -94,14 +135,14 @@ export function renderLibrary(){
       </div>`;
 
     view.querySelectorAll("[data-cat]").forEach(el=>el.onclick=()=>{ filter = el.dataset.cat; draw(); });
-    view.querySelectorAll("[data-openct]").forEach(el=>el.onclick=()=>{ const d=drills.find(x=>x.docId===el.dataset.openct); if(d) openCourt(d,"play"); });
-    view.querySelectorAll("[data-editct]").forEach(el=>el.onclick=()=>{ const d=drills.find(x=>x.docId===el.dataset.editct); if(d) openCourt(d,"build"); });
+    view.querySelectorAll("[data-openct]").forEach(el=>el.onclick=()=>{ const d=drills.find(x=>x.docId===el.dataset.openct); if(d) openPlay(d); });
+    view.querySelectorAll("[data-editct]").forEach(el=>el.onclick=()=>{ const d=drills.find(x=>x.docId===el.dataset.editct); if(d) openBuild(d.court&&d.court.kind, d); });
     view.querySelectorAll("[data-delct]").forEach(el=>el.onclick=async ()=>{ const id=el.dataset.delct; if(confirm("Delete this court drill?")){ try{ await deleteDrill(id); }catch(e){} } });
 
     if(coach){
       const form = document.getElementById("drillForm");
       document.getElementById("addDrillBtn").onclick = ()=>{ form.style.display = form.style.display==="none"?"block":"none"; };
-      document.getElementById("addCourtBtn").onclick = ()=>openCourt(null,"build");
+      document.getElementById("addCourtBtn").onclick = openPick;
       document.getElementById("dSave").onclick = async ()=>{
         const title = document.getElementById("dTitle").value.trim();
         const errEl = document.getElementById("dErr"); errEl.textContent = "";
@@ -120,7 +161,11 @@ export function renderLibrary(){
     }
   };
 
-  const draw = ()=>{ if(screen) renderCourtScreen(); else renderList(); };
+  const draw = ()=>{
+    if(!screen) return renderList();
+    if(screen.mode==="pick") return renderPick();
+    return renderCourtScreen();
+  };
 
   view.innerHTML = `<div class="muted">Loading library…</div>`;
   state.unsub.push(listenDrills((arr, err)=>{
