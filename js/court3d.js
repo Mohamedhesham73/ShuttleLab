@@ -39,8 +39,8 @@ const SHOT_ORDER = ["servelow","servehigh","serveflick","clear","attclear","drop
 const DCOLS = ["#a4dd2b","#ffd34d","#ff5d6c","#5db9ff","#c77dff","#ffffff"];
 
 const CAMS = {
-  broadcast:{ name:"Broadcast", C:[3.05,-7.2,4.6], T:[3.05,8.0,0.2], F:640 },
-  corner:   { name:"Corner",    C:[-5.0,-4.0,4.6], T:[3.05,7.0,0.3], F:560 },
+  broadcast:{ name:"Broadcast", C:[3.05,-9.0,5.4], T:[3.05,7.6,0.1], F:580 },
+  corner:   { name:"Corner",    C:[-6.2,-4.6,5.0], T:[3.05,7.0,0.2], F:520 },
   side:     { name:"Side",      C:[-9.8,6.7,2.4],  T:[3.05,6.7,0.9], F:470 },
   bird:     { name:"Bird's-eye",C:[3.05,6.7,15.5], T:[3.05,6.74,0],  F:480 }
 };
@@ -222,28 +222,30 @@ export function mountProCourt(container, opts){
     if(basis.bird){
       return { far: st.y>CT.NET, svg:`<circle cx="${anchor[0]}" cy="${anchor[1]}" r="9" fill="${pl.jersey}" stroke="#0c1410" stroke-width="1.4"/><text x="${anchor[0]}" y="${anchor[1]+3.4}" font-size="9" text-anchor="middle" fill="#0c1410" font-weight="700">${pl.p}</text>` };
     }
+    const FIG = 0.8;   // athlete display scale — smaller, neater figures
     const s = cam.F/anchor[2];
     const J = poseJoints(st.pose, st.blend==null?1:st.blend, st.poseFrom);
-    const P = (j)=>{ const lx=J[j][0]*st.face, lz=J[j][1]+(st.zoff||0);
+    const P = (j)=>{ const lx=J[j][0]*st.face*FIG, lz=(J[j][1]+(st.zoff||0))*FIG;
       return proj(st.x + basis.r[0]*lx, st.y + basis.r[1]*lx, lz); };
     const pts={}; let ok=true;
     JOINTS.forEach(j=>{ pts[j]=P(j); if(!pts[j]) ok=false; });
     if(!ok) return { svg:"", far: st.y>CT.NET };
-    const w = m => Math.max(1, m*s);
+    const w = m => Math.max(0.9, m*s);
     const L=(a,b,col,wm)=>`<line x1="${pts[a][0].toFixed(1)}" y1="${pts[a][1].toFixed(1)}" x2="${pts[b][0].toFixed(1)}" y2="${pts[b][1].toFixed(1)}" stroke="${col}" stroke-width="${w(wm).toFixed(1)}" stroke-linecap="round"/>`;
-    const shadow = `<ellipse cx="${anchor[0]}" cy="${anchor[1]}" rx="${(0.34*s).toFixed(1)}" ry="${(0.10*s).toFixed(1)}" fill="rgba(0,0,0,.35)"/>`;
+    const shadow = `<ellipse cx="${anchor[0]}" cy="${anchor[1]}" rx="${(0.26*s).toFixed(1)}" ry="${(0.08*s).toFixed(1)}" fill="rgba(0,0,0,.32)"/>`;
     const rkLen = Math.hypot(pts.rk[0]-pts.hR[0], pts.rk[1]-pts.hR[1]);
     const rkAng = Math.atan2(pts.rk[1]-pts.hR[1], pts.rk[0]-pts.hR[0])*180/Math.PI;
-    const racket = `<line x1="${pts.hR[0]}" y1="${pts.hR[1]}" x2="${pts.rk[0]}" y2="${pts.rk[1]}" stroke="#9aa49a" stroke-width="${w(0.025)}"/>
-      <ellipse cx="${pts.rk[0]}" cy="${pts.rk[1]}" rx="${Math.max(2,rkLen*0.34)}" ry="${Math.max(1.4,rkLen*0.24)}" transform="rotate(${rkAng.toFixed(0)} ${pts.rk[0]} ${pts.rk[1]})" fill="rgba(230,240,235,.18)" stroke="#aeb8af" stroke-width="${w(0.018)}"/>`;
+    const racket = `<line x1="${pts.hR[0]}" y1="${pts.hR[1]}" x2="${pts.rk[0]}" y2="${pts.rk[1]}" stroke="#9aa49a" stroke-width="${w(0.02)}"/>
+      <ellipse cx="${pts.rk[0]}" cy="${pts.rk[1]}" rx="${Math.max(1.6,rkLen*0.32)}" ry="${Math.max(1.1,rkLen*0.22)}" transform="rotate(${rkAng.toFixed(0)} ${pts.rk[0]} ${pts.rk[1]})" fill="rgba(230,240,235,.16)" stroke="#aeb8af" stroke-width="${w(0.014)}"/>`;
+    const shoe = Math.max(1.4, 0.05*s);
     const svg = shadow
-      + L("hip","kL","#16201a",0.085) + L("kL","fL","#16201a",0.075)
-      + L("hip","kR","#16201a",0.085) + L("kR","fR","#16201a",0.075)
-      + `<line x1="${pts.fL[0]-2}" y1="${pts.fL[1]}" x2="${pts.fL[0]+2}" y2="${pts.fL[1]}" stroke="#e8efe6" stroke-width="${w(0.04)}"/>`
-      + `<line x1="${pts.fR[0]-2}" y1="${pts.fR[1]}" x2="${pts.fR[0]+2}" y2="${pts.fR[1]}" stroke="#e8efe6" stroke-width="${w(0.04)}"/>`
-      + L("neck","hip",pl.jersey,0.17)
-      + L("neck","hL","#d9b08c",0.05) + L("neck","hR","#d9b08c",0.05)
-      + `<circle cx="${pts.head[0].toFixed(1)}" cy="${pts.head[1].toFixed(1)}" r="${(0.095*s).toFixed(1)}" fill="#d9b08c"/>`
+      + L("hip","kL","#16201a",0.062) + L("kL","fL","#16201a",0.055)
+      + L("hip","kR","#16201a",0.062) + L("kR","fR","#16201a",0.055)
+      + `<line x1="${(pts.fL[0]-shoe).toFixed(1)}" y1="${pts.fL[1]}" x2="${(pts.fL[0]+shoe).toFixed(1)}" y2="${pts.fL[1]}" stroke="#e8efe6" stroke-width="${w(0.03)}" stroke-linecap="round"/>`
+      + `<line x1="${(pts.fR[0]-shoe).toFixed(1)}" y1="${pts.fR[1]}" x2="${(pts.fR[0]+shoe).toFixed(1)}" y2="${pts.fR[1]}" stroke="#e8efe6" stroke-width="${w(0.03)}" stroke-linecap="round"/>`
+      + L("neck","hip",pl.jersey,0.125)
+      + L("neck","hL","#d9b08c",0.04) + L("neck","hR","#d9b08c",0.04)
+      + `<circle cx="${pts.head[0].toFixed(1)}" cy="${pts.head[1].toFixed(1)}" r="${(0.075*s).toFixed(1)}" fill="#d9b08c"/>`
       + racket;
     return { svg, far: st.y>CT.NET };
   }
@@ -251,12 +253,20 @@ export function mountProCourt(container, opts){
   function shuttleSVG(x,y,z,px,py){
     const p=proj(x,y,z); if(!p) return "";
     const prev = (px!=null) ? proj(px,py==null?y:py, z) : null;
-    const s=cam.F/p[2]*0.26;
     let ang=0;
     if(prev) ang=Math.atan2(p[1]-prev[1],p[0]-prev[0])*180/Math.PI;
+    // metric size, clamped — a shuttle is small, always
+    const s=clamp(cam.F/p[2]*0.022, 0.55, 1.9);
     const g=proj(x,y,0);
-    return (g?`<ellipse cx="${g[0]}" cy="${g[1]}" rx="${Math.max(2,0.12*cam.F/g[2]*(1+z*0.3))}" ry="${Math.max(1,0.05*cam.F/g[2]*(1+z*0.3))}" fill="rgba(0,0,0,.25)"/>`:"")
-      + `<g transform="translate(${p[0].toFixed(1)},${p[1].toFixed(1)}) rotate(${ang.toFixed(0)}) scale(${Math.max(0.5,s).toFixed(2)})"><path d="M 3 0 L -7 -4.8 L -4 0 L -7 4.8 Z" fill="#eef4ee" stroke="#0c1410" stroke-width="0.8"/><circle cx="4" cy="0" r="2.6" fill="#fff" stroke="#9aa49a" stroke-width="0.8"/></g>`;
+    const shR = g ? clamp(0.09*cam.F/g[2]*(1+z*0.25), 1.5, 6) : 0;
+    return (g?`<ellipse cx="${g[0].toFixed(1)}" cy="${g[1].toFixed(1)}" rx="${shR.toFixed(1)}" ry="${(shR*0.45).toFixed(1)}" fill="rgba(0,0,0,.28)"/>`:"")
+      + `<g transform="translate(${p[0].toFixed(1)},${p[1].toFixed(1)}) rotate(${ang.toFixed(0)}) scale(${s.toFixed(2)})">`
+      +   `<path d="M 2.4 0 L -5.4 -3.4 Q -6.6 0 -5.4 3.4 Z" fill="#f4f8f3" stroke="#aab4ab" stroke-width="0.6"/>`
+      +   `<line x1="1.8" y1="0" x2="-5.2" y2="-2.1" stroke="#c4cec5" stroke-width="0.45"/>`
+      +   `<line x1="1.8" y1="0" x2="-5.6" y2="0" stroke="#c4cec5" stroke-width="0.45"/>`
+      +   `<line x1="1.8" y1="0" x2="-5.2" y2="2.1" stroke="#c4cec5" stroke-width="0.45"/>`
+      +   `<circle cx="2.9" cy="0" r="1.9" fill="#efe7da" stroke="#b89a7a" stroke-width="0.7"/>`
+      + `</g>`;
   }
 
   // ---------- timeline (compiled, seekable) ----------
@@ -287,14 +297,26 @@ export function mountProCourt(container, opts){
       flights.push({t0:contact,t1:contact+sh.dur,tr:{x1:st.from.x,y1:st.from.y,x2:st.to.x,y2:st.to.y,z0:sh.z0,h:sh.h},idx:i,color:st.color});
       fx.push({kind:"hit",t:contact,x:st.from.x,y:st.from.y,z:sh.z0});
       fx.push({kind:"land",t:contact+sh.dur,x:st.to.x,y:st.to.y,out:st.out});
-      // the other player anticipates during the flight
+      // real-rally movement: BOTH players move at once during the flight —
+      // the receiver covers / goes to their hit point, the hitter recovers.
       const nh=nextHit(i);
       if(feed!=="multi"){
         const other = hitter==="A"?"B":"A";
-        const dest = (nh && ((nh.from.y<CT.NET?"A":"B")===other)) ? {...nh.from} : {...players.find(q=>q.p===other).base};
+        const nextHitter = nh ? (nh.from.y<CT.NET?"A":"B") : null;
+        const dest = (nextHitter===other) ? {...nh.from} : {...players.find(q=>q.p===other).base};
         const md=clamp(dist2(P[other],dest)/5,0.2,Math.max(0.4,sh.dur));
         movers.push({p:other,from:{...P[other]},to:dest,t0:contact,t1:contact+md});
         P[other]=dest;
+        // fast attacking shot incoming → receiver sinks into defensive stance
+        if(st.shot==="smash"||st.shot==="jsmash"||st.shot==="halfsmash"||st.shot==="kill"||st.shot==="drive")
+          poses.push({p:other,pose:"defense",t0:contact+sh.dur*0.35,t1:contact+sh.dur+0.15});
+        // hitter recovers to base simultaneously (unless they hit again next)
+        if(nextHitter!==hitter){
+          const hb=players.find(q=>q.p===hitter).base;
+          const hd=clamp(dist2(P[hitter],hb)/4.5,0.3,1.3);
+          movers.push({p:hitter,from:{...P[hitter]},to:{...hb},t0:contact+0.12,t1:contact+0.12+hd});
+          P[hitter]={...hb};
+        }
       }else{
         // trainee recovers to base between feeds unless next feed is close
         const dest = (nh) ? {...nh.from} : {...players[0].base};
