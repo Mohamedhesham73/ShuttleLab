@@ -250,11 +250,15 @@ export function renderMatches(){
         <div id="flmNote" style="position:absolute;left:10px;right:10px;top:10px;display:none;background:rgba(8,24,18,0.88);border:1px solid rgba(164,221,43,.35);border-radius:10px;padding:9px 12px;color:#eafff0;">
           <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--brand);margin-bottom:3px;"><span id="flmNoteMeta">Note</span></div>
           <div id="flmNoteText" style="font-size:13px;line-height:1.45;"></div>
-          <button class="btn pri" id="flmResume" style="display:none;margin-top:8px;padding:5px 12px;font-size:12px;">▶ Resume</button>
+          <div style="display:flex;gap:6px;margin-top:8px;">
+            <button class="btn pri" id="flmResume" style="display:none;padding:5px 12px;font-size:12px;">▶ Resume</button>
+            <button class="btn" id="flmHear" style="display:none;padding:5px 12px;font-size:12px;">🔊 Hear coach</button>
+          </div>
         </div>
         <div id="flmSlow" style="position:absolute;right:10px;bottom:10px;display:none;background:rgba(8,24,18,0.8);color:#5db9ff;font-size:11px;padding:3px 9px;border-radius:20px;">slow-mo</div>
         <div id="flmLoad" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px;">Loading video…</div>
       </div>
+      <audio id="flmAudio" preload="auto" style="display:none;"></audio>
 
       <div style="position:relative;height:14px;margin:12px 2px 2px;">
         <div style="position:absolute;top:50%;left:0;right:0;height:3px;transform:translateY(-50%);background:var(--line2);border-radius:3px;"></div>
@@ -288,6 +292,15 @@ export function renderMatches(){
             <span class="chip" id="flmTCircle">Circle</span>
             <span id="flmPal" style="display:flex;gap:6px;margin-left:4px;"></span>
             <button class="btn" id="flmClr" style="margin-left:auto;padding:5px 10px;font-size:12px;">Clear</button>
+          </div>
+        </div>
+        <div style="border-top:1px solid var(--line);padding-top:10px;margin-top:10px;">
+          <div class="muted" style="font-size:12px;margin-bottom:6px;">Your voice — tell them in your own words</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <button class="btn" id="flmRec" style="padding:5px 12px;font-size:12px;">● Record</button>
+            <button class="btn" id="flmVPlay" style="padding:5px 10px;font-size:12px;display:none;">▶ Play</button>
+            <button class="btn" id="flmVDel" style="padding:5px 10px;font-size:12px;display:none;color:var(--down);border-color:var(--down);">Remove</button>
+            <span id="flmRecMsg" class="muted" style="font-size:12px;"></span>
           </div>
         </div>
         <button class="btn" id="flmEdDone" style="width:100%;margin-top:12px;">Done</button>
@@ -356,12 +369,24 @@ export function renderMatches(){
         }
       });
     }
+    const audioCache = {};
+    async function playAudio(m){
+      if(!m || !m.audio) return;
+      try{
+        if(!audioCache[m.id]) audioCache[m.id] = await getPlaybackUrl(m.audio);
+        const a=document.getElementById("flmAudio");
+        if(a && audioCache[m.id]){ a.src=audioCache[m.id]; a.play().catch(()=>{}); }
+      }catch(e){}
+    }
     function showNote(m, withResume){
-      document.getElementById("flmNoteMeta").textContent = "At "+fmt(m.t)+(m.slow?" · slow-mo":"");
+      document.getElementById("flmNoteMeta").textContent = "At "+fmt(m.t)+(m.slow?" · slow-mo":"")+(m.audio?" · 🔊":"");
       document.getElementById("flmNoteText").textContent = m.note || "(no note)";
       document.getElementById("flmNote").style.display = "block";
       document.getElementById("flmResume").style.display = withResume ? "inline-flex" : "none";
+      const hear=document.getElementById("flmHear");
+      if(hear){ hear.style.display = m.audio ? "inline-flex" : "none"; hear.onclick=()=>playAudio(m); }
       showOverlay(m); shownId = m.id;
+      if(m.audio) playAudio(m);   // the coach's voice plays as the note appears
     }
     function hideNote(){ document.getElementById("flmNote").style.display="none"; shownId=null; showOverlay(coach?sel:null); }
     function updateFlash(t){
@@ -398,7 +423,7 @@ export function renderMatches(){
       markers.slice().sort((a,b)=>a.t-b.t).forEach(m=>{
         const r=document.createElement("div");
         r.style.cssText="display:flex;align-items:center;gap:9px;padding:9px 11px;border:1px solid var(--line);border-radius:10px;cursor:pointer;";
-        const tags=(m.pause?" · pause":"")+(m.slow?" · slow":"")+((m.draws&&m.draws.length)?" · draw":"");
+        const tags=(m.pause?" · pause":"")+(m.slow?" · slow":"")+((m.draws&&m.draws.length)?" · draw":"")+(m.audio?" · 🔊 voice":"");
         r.innerHTML='<span style="width:9px;height:9px;border-radius:50%;flex:0 0 auto;background:'+m.color+';"></span>'+
           '<div style="flex:1;"><div class="muted" style="font-size:12px;font-variant-numeric:tabular-nums;">'+fmt(m.t)+esc(tags)+'</div>'+
           '<div style="font-size:14px;">'+esc(m.note||"(no note)")+'</div></div>';
@@ -419,6 +444,10 @@ export function renderMatches(){
       document.getElementById("flmSlowSpd").style.display=m.slow?"inline-block":"none";
       document.getElementById("flmSlowSpd").value=String(m.slowSpd||0.5);
       tool=null; document.getElementById("flmTArrow").classList.remove("on"); document.getElementById("flmTCircle").classList.remove("on");
+      document.getElementById("flmVPlay").style.display = m.audio ? "inline-flex" : "none";
+      document.getElementById("flmVDel").style.display = m.audio ? "inline-flex" : "none";
+      document.getElementById("flmRec").textContent = "● Record";
+      document.getElementById("flmRecMsg").textContent = m.audio ? "Voice attached." : "";
       showOverlay(m);
     }
     function closeEditor(){ const ed=document.getElementById("flmEditor"); if(ed) ed.style.display="none"; sel=null; tool=null; showOverlay(null); }
@@ -438,6 +467,36 @@ export function renderMatches(){
       document.getElementById("flmClr").onclick=()=>{ if(sel){ sel.draws=[]; showOverlay(sel); renderMk(); } };
       document.getElementById("flmEdDel").onclick=()=>{ if(!sel)return; const i=markers.indexOf(sel); if(i>=0) markers.splice(i,1); closeEditor(); renderMk(); };
       document.getElementById("flmEdDone").onclick=()=>closeEditor();
+
+      // ----- voice note: record the coach's own words -----
+      let rec=null, recChunks=[], recording=false, recStream=null;
+      const recBtn=document.getElementById("flmRec"), recMsg=document.getElementById("flmRecMsg");
+      const vPlay=document.getElementById("flmVPlay"), vDel=document.getElementById("flmVDel");
+      recBtn.onclick=async ()=>{
+        if(!sel){ recMsg.textContent="Open a note first."; return; }
+        if(recording){ recording=false; recBtn.textContent="● Record"; if(rec) rec.stop(); return; }
+        try{ recStream=await navigator.mediaDevices.getUserMedia({audio:true}); }
+        catch(e){ recMsg.textContent="Microphone blocked — allow mic access."; return; }
+        recChunks=[]; rec=new MediaRecorder(recStream);
+        rec.ondataavailable=e=>{ if(e.data && e.data.size) recChunks.push(e.data); };
+        rec.onstop=async ()=>{
+          recStream.getTracks().forEach(t=>t.stop());
+          const type=rec.mimeType||"audio/webm";
+          const ext=type.indexOf("mp4")>=0?"mp4":type.indexOf("ogg")>=0?"ogg":"webm";
+          const file=new File([new Blob(recChunks,{type})],"voice-"+Date.now()+"."+ext,{type});
+          recMsg.textContent="Uploading…";
+          try{
+            const { key, url }=await uploadToR2(file);
+            if(sel){ sel.audio={ kind:"r2", key, url:url||null }; audioCache[sel.id]=null; }
+            recMsg.textContent="Voice attached. Remember to Save & send.";
+            vPlay.style.display="inline-flex"; vDel.style.display="inline-flex";
+            renderMk();
+          }catch(e){ recMsg.textContent="Upload failed: "+(e.message||e); }
+        };
+        rec.start(); recording=true; recBtn.textContent="■ Stop"; recMsg.textContent="Recording… speak now.";
+      };
+      vPlay.onclick=()=>{ if(sel) playAudio(sel); };
+      vDel.onclick=()=>{ if(sel){ sel.audio=null; audioCache[sel.id]=null; vPlay.style.display="none"; vDel.style.display="none"; recMsg.textContent="Voice removed."; renderMk(); } };
 
       // drawing on the frame
       const ovPt=(evt)=>{ const pt=ov.createSVGPoint(); const s=evt.touches&&evt.touches[0]?evt.touches[0]:evt; pt.x=s.clientX; pt.y=s.clientY; const m=ov.getScreenCTM(); return m?pt.matrixTransform(m.inverse()):null; };
