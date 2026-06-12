@@ -1,20 +1,26 @@
 // =============================================================
 //  PRO COURT (Singles) — a real 3D-projected badminton court with
-//  posed athlete figures. Keeps the classic courts' control style:
-//  shot select + colour palette + Recover + Clear + note + step
-//  list + play/pause/speed — and adds switchable 3D cameras
-//  (Broadcast / Corner / Side / Bird's-eye) with smooth glides.
+//  posed athlete figures, switchable cameras and a seekable rally
+//  timeline. Classic-court controls: shot select + colour palette +
+//  Recover + Move + note + step list + play/speed.
 //
 //  mountProCourt(container, opts) → { getPoints, hasShots, destroy }
-//    opts.points  saved steps     opts.mode "edit"|"play"
-//    opts.feed    "drill"|"multi" (multi = coach-fed multi-shuttle)
+//    opts.points  saved data — legacy array of steps, or
+//                 { steps, feeder:{x,y}, nA, nB }
+//    opts.mode    "edit" | "play"
+//    opts.feed    "drill" | "multi"
 //
-//  Court is BWF-exact (13.40×6.10 m, singles lines 0.46 m in, net
-//  1.524/1.55 m, short service 1.98 m, lines 40 mm). Serves are
-//  validated against the legal diagonal singles service court.
+//  Coach controls EVERYTHING: squad size per side (1–4, e.g. 3v1),
+//  where each player stands (Move tool), who hits (nearest to the
+//  tap), where the shuttle goes, and where anyone goes afterwards.
+//  Multi-shuttle: the feeder is placeable anywhere and feeds the
+//  EXACT point the player hits from — the player is already there
+//  and strikes directly, no run-up. Every trajectory is lifted to
+//  clear the net tape.
 // =============================================================
 
 const CT = { W:6.1, L:13.4, NET:6.7, SSLA:4.72, SSLB:8.68, DLSA:0.76, DLSB:12.64, SIN:0.46, SXL:5.64, CX:3.05, NETH:1.55, NETB:0.76 };
+const NETH_D = 1.34, NETB_D = 0.58;   // drawn net (slightly shorter, so cleared shots show daylight)
 const VW=760, VH=430;
 
 const SHOTS = {
@@ -28,14 +34,15 @@ const SHOTS = {
   smash:    { name:"Smash",            z0:2.85, h:0,    dur:0.55, pose:"overhead" },
   jsmash:   { name:"Jump smash",       z0:3.15, h:0,    dur:0.5,  pose:"jump" },
   halfsmash:{ name:"Half smash",       z0:2.8,  h:0.05, dur:0.8,  pose:"overhead" },
-  drive:    { name:"Drive",            z0:1.5,  h:0.12, dur:0.6,  pose:"drive" },
+  drive:    { name:"Drive",            z0:1.6,  h:0.12, dur:0.6,  pose:"drive" },
   push:     { name:"Push",             z0:1.3,  h:0.35, dur:0.9,  pose:"drive" },
   net:      { name:"Net shot",         z0:1.0,  h:0.3,  dur:1.0,  pose:"lunge" },
-  kill:     { name:"Net kill",         z0:1.5,  h:0,    dur:0.35, pose:"lunge" },
+  kill:     { name:"Net kill",         z0:1.9,  h:0,    dur:0.35, pose:"lunge" },
   lift:     { name:"Lift / lob",       z0:0.85, h:4.2,  dur:1.55, pose:"lunge" },
   block:    { name:"Block (defense)",  z0:0.95, h:0.5,  dur:1.0,  pose:"defense" }
 };
 const SHOT_ORDER = ["servelow","servehigh","serveflick","clear","attclear","drop","fastdrop","smash","jsmash","halfsmash","drive","push","net","kill","lift","block"];
+const FAST = { smash:1, jsmash:1, halfsmash:1, kill:1, drive:1 };
 const DCOLS = ["#a4dd2b","#ffd34d","#ff5d6c","#5db9ff","#c77dff","#ffffff"];
 
 const CAMS = {
@@ -45,7 +52,6 @@ const CAMS = {
   bird:     { name:"Bird's-eye",C:[3.05,6.7,15.5], T:[3.05,6.74,0],  F:480 }
 };
 
-// athlete poses — joints in metres, local frame (lx lateral, lz up from feet)
 const POSES = {
   ready:   { head:[0,1.58], neck:[0,1.42], hip:[0,.9],  kL:[-.2,.5],  fL:[-.26,0],  kR:[.2,.5],  fR:[.26,0],  hL:[-.32,1.05], hR:[.34,1.18], rk:[.6,1.5] },
   run:     { head:[.08,1.6],neck:[.06,1.44],hip:[0,.92], kL:[-.28,.5], fL:[-.42,.06],kR:[.3,.48], fR:[.44,0],  hL:[-.36,1.2],  hR:[.38,1.05], rk:[.64,1.28] },
@@ -77,23 +83,46 @@ function serveBox(sx,sy){
 const inBox=(b,x,y)=> x>=b.x1-0.05 && x<=b.x2+0.05 && y>=b.y1-0.05 && y<=b.y2+0.05;
 const inSingles=(x,y)=> x>=CT.SIN-0.05 && x<=CT.SXL+0.05 && y>=-0.05 && y<=CT.L+0.05;
 function flightPos(tr,k){ return { x:tr.x1+(tr.x2-tr.x1)*k, y:tr.y1+(tr.y2-tr.y1)*k, z:tr.z0*(1-k)+tr.h*Math.sin(Math.PI*k) }; }
+// lift any net-crossing trajectory so it clears the real tape (1.55 m)
+function clearNet(tr){
+  if((tr.y1<CT.NET)===(tr.y2<CT.NET)) return tr;
+  const k=(CT.NET-tr.y1)/((tr.y2-tr.y1)||0.001), sk=Math.max(0.05,Math.sin(Math.PI*k));
+  const z=tr.z0*(1-k)+tr.h*sk;
+  if(z < CT.NETH+0.05) tr.h=(CT.NETH+0.05-tr.z0*(1-k))/sk;
+  return tr;
+}
 
 export function mountProCourt(container, opts){
   opts = opts || {};
   const editing = (opts.mode||"edit") !== "play";
   const feed = opts.feed || "drill";
-  let steps = Array.isArray(opts.points) ? JSON.parse(JSON.stringify(opts.points)) : [];
   const uid = "pc"+Math.floor(Math.random()*1e6);
   const gid = s => container.querySelector("#"+uid+s);
 
-  // players
-  const players = [{ p:"A", jersey:"#a4dd2b", base:{x:CT.CX,y:3.8} }];
-  if(feed==="multi") players.push({ p:"C", jersey:"#aab4ab", base:{x:CT.CX,y:7.6}, feeder:true });
-  else players.push({ p:"B", jersey:"#5db9ff", base:{x:CT.CX,y:9.6} });
+  // ---- saved data (legacy array OR {steps, feeder, nA, nB}) ----
+  let meta = { nA:1, nB:1, feeder:{x:3.05,y:7.6} };
+  let steps = [];
+  if(Array.isArray(opts.points)) steps = JSON.parse(JSON.stringify(opts.points));
+  else if(opts.points && typeof opts.points==="object"){
+    steps = JSON.parse(JSON.stringify(opts.points.steps||[]));
+    meta.nA = clamp(opts.points.nA||1,1,4); meta.nB = clamp(opts.points.nB||1,1,4);
+    if(opts.points.feeder) meta.feeder = { x:opts.points.feeder.x, y:opts.points.feeder.y };
+  }
+  steps.forEach(s=>{ if(s.p==="A")s.p="A1"; if(s.p==="B")s.p="B1"; if(s.hitter==="A")s.hitter="A1"; if(s.hitter==="B")s.hitter="B1"; });
 
-  // camera
+  function spread(n){ return n===1?[3.05]: n===2?[1.8,4.3]: n===3?[1.2,3.05,4.9]:[0.9,2.5,3.6,5.2]; }
+  function buildPlayers(){
+    const arr=[];
+    spread(meta.nA).forEach((x,i)=>arr.push({ p:"A"+(i+1), jersey:"#a4dd2b", base:{x, y:3.8} }));
+    if(feed==="multi") arr.push({ p:"C", jersey:"#aab4ab", base:{...meta.feeder}, feeder:true });
+    else spread(meta.nB).forEach((x,i)=>arr.push({ p:"B"+(i+1), jersey:"#5db9ff", base:{x, y:9.6} }));
+    return arr;
+  }
+  let players = buildPlayers();
+
+  // ---- camera ----
   let cam = { C:[...CAMS.broadcast.C], T:[...CAMS.broadcast.T], F:CAMS.broadcast.F };
-  let camTw = null, basis = null;
+  let basis = null;
   function calcBasis(){
     const f = vnorm(vsub(cam.T, cam.C));
     const up = Math.abs(f[2])>0.96 ? [0,1,0] : [0,0,1];
@@ -115,7 +144,7 @@ export function mountProCourt(container, opts){
     return { x:clamp(cam.C[0]+dir[0]*t, -0.6, CT.W+0.6), y:clamp(cam.C[1]+dir[1]*t, -1.2, CT.L+1.2) };
   }
 
-  // ---------- shell ----------
+  // ---- shell ----
   container.innerHTML = `
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
       ${Object.keys(CAMS).map(k=>`<span class="chip ${k==="broadcast"?"on":""}" id="${uid}cam_${k}">🎥 ${CAMS[k].name}</span>`).join("")}
@@ -132,30 +161,48 @@ export function mountProCourt(container, opts){
     ${editing ? `
     <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
       <select id="${uid}shot" style="flex:1;min-width:130px;">${SHOT_ORDER.map(k=>`<option value="${k}">${SHOTS[k].name}</option>`).join("")}</select>
+      <span class="chip" id="${uid}mv">Move</span>
+      ${feed==="multi" ? `<span class="chip" id="${uid}fd">Place feeder</span>` : ``}
       <button class="btn" id="${uid}rec" style="padding:7px 11px;font-size:12px;">Recover</button>
       <button class="btn" id="${uid}undo" style="padding:7px 11px;font-size:12px;">Undo</button>
       <button class="btn" id="${uid}clr" style="padding:7px 11px;font-size:12px;">Clear</button>
     </div>
+    ${feed!=="multi" ? `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px;">
+      <span class="muted" style="font-size:12px;">Players</span>
+      <span style="display:flex;gap:5px;align-items:center;">
+        <button class="btn" id="${uid}am" style="padding:3px 9px;font-size:12px;">−</button>
+        <span id="${uid}an" style="color:#a4dd2b;font-weight:600;font-size:13px;min-width:14px;text-align:center;">${meta.nA}</span>
+        <button class="btn" id="${uid}ap" style="padding:3px 9px;font-size:12px;">+</button>
+      </span>
+      <span class="muted" style="font-size:12px;">vs</span>
+      <span style="display:flex;gap:5px;align-items:center;">
+        <button class="btn" id="${uid}bm" style="padding:3px 9px;font-size:12px;">−</button>
+        <span id="${uid}bn" style="color:#5db9ff;font-weight:600;font-size:13px;min-width:14px;text-align:center;">${meta.nB}</span>
+        <button class="btn" id="${uid}bp" style="padding:3px 9px;font-size:12px;">+</button>
+      </span>
+      <span class="muted" style="font-size:12px;">— e.g. 3 vs 1 for pressure drills</span>
+    </div>` : ``}
     <div id="${uid}pal" style="display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-top:8px;"><span class="muted" style="font-size:12px;">Colour</span></div>
     <input id="${uid}noteIn" type="text" placeholder="Coaching note for the last shot (optional)" style="width:100%;margin-top:8px;">` : ``}
     <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
       <button class="btn" id="${uid}play" style="padding:8px 14px;">▶ Play</button>
       <button class="btn" id="${uid}rst" style="padding:8px 12px;">↺</button>
-      <select id="${uid}spd" style="width:auto;"><option value="1">1×</option><option value="0.6">0.6×</option><option value="0.35">0.35×</option></select>
+      <select id="${uid}spd" style="width:auto;"><option value="1.5">Fast</option><option value="1" selected>Normal</option><option value="0.5">Slow</option></select>
       <span id="${uid}hint" class="muted" style="font-size:12px;flex:1;min-width:140px;"></span>
     </div>
     <div id="${uid}list" style="margin-top:10px;display:flex;flex-direction:column;gap:5px;"></div>`;
 
   let drawColor = DCOLS[0], pend = null, raf = null, playing = false;
   let tCur = 0, stopAt = 0, lastTs = 0, activeIdx = -1;
-  let tl = null;   // compiled timeline
+  let tl = null;
+  let mvSel = null, mvOn = false, fdOn = false;   // Move tool / Place-feeder tool
 
   // ---------- static rendering ----------
   function polyPts(arr){ return arr.filter(Boolean).map(p=>p[0].toFixed(1)+","+p[1].toFixed(1)).join(" "); }
-  function line3(x1,y1,x2,y2,col,wM,dash){
+  function line3(x1,y1,x2,y2,col,wM){
     const a=proj(x1,y1,0), b=proj(x2,y2,0); if(!a||!b) return "";
     const w=Math.max(0.8, wM*cam.F/((a[2]+b[2])/2));
-    return `<line x1="${a[0].toFixed(1)}" y1="${a[1].toFixed(1)}" x2="${b[0].toFixed(1)}" y2="${b[1].toFixed(1)}" stroke="${col}" stroke-width="${w.toFixed(1)}"${dash?` stroke-dasharray="${dash}"`:""}/>`;
+    return `<line x1="${a[0].toFixed(1)}" y1="${a[1].toFixed(1)}" x2="${b[0].toFixed(1)}" y2="${b[1].toFixed(1)}" stroke="${col}" stroke-width="${w.toFixed(1)}"/>`;
   }
   function renderStatic(){
     calcBasis();
@@ -171,40 +218,36 @@ export function mountProCourt(container, opts){
       [0,CT.DLSA,CT.W,CT.DLSA],[0,CT.DLSB,CT.W,CT.DLSB],
       [CT.CX,0,CT.CX,CT.SSLA],[CT.CX,CT.SSLB,CT.CX,CT.L]
     ].map(s=>line3(s[0],s[1],s[2],s[3],"#e9f5ec",0.04)).join("");
-    // net with mesh
-    const tA=proj(0,CT.NET,CT.NETH), tB=proj(CT.W,CT.NET,CT.NETH), bA=proj(0,CT.NET,CT.NETB), bB=proj(CT.W,CT.NET,CT.NETB);
+    const tA=proj(0,CT.NET,NETH_D), tB=proj(CT.W,CT.NET,NETH_D), bA=proj(0,CT.NET,NETB_D), bB=proj(CT.W,CT.NET,NETB_D);
     const fA=proj(0,CT.NET,0), fB=proj(CT.W,CT.NET,0);
     let net="";
     if(tA&&tB&&bA&&bB){
       net += `<polygon points="${polyPts([tA,tB,bB,bA])}" fill="rgba(210,230,220,.13)"/>`;
-      for(let i=1;i<13;i++){ const x=CT.W*i/13, a=proj(x,CT.NET,CT.NETH), b=proj(x,CT.NET,CT.NETB); if(a&&b) net+=`<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="rgba(220,235,228,.35)" stroke-width="0.7"/>`; }
-      for(let j=1;j<4;j++){ const z=CT.NETB+(CT.NETH-CT.NETB)*j/4, a=proj(0,CT.NET,z), b=proj(CT.W,CT.NET,z); if(a&&b) net+=`<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="rgba(220,235,228,.3)" stroke-width="0.7"/>`; }
-      net += `<line x1="${tA[0]}" y1="${tA[1]}" x2="${tB[0]}" y2="${tB[1]}" stroke="#fff" stroke-width="2.6"/>`;
+      for(let i=1;i<13;i++){ const x=CT.W*i/13, a=proj(x,CT.NET,NETH_D), b=proj(x,CT.NET,NETB_D); if(a&&b) net+=`<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="rgba(220,235,228,.35)" stroke-width="0.7"/>`; }
+      for(let j=1;j<4;j++){ const z=NETB_D+(NETH_D-NETB_D)*j/4, a=proj(0,CT.NET,z), b=proj(CT.W,CT.NET,z); if(a&&b) net+=`<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="rgba(220,235,228,.3)" stroke-width="0.7"/>`; }
+      net += `<line x1="${tA[0]}" y1="${tA[1]}" x2="${tB[0]}" y2="${tB[1]}" stroke="#fff" stroke-width="2.4"/>`;
       if(fA) net += `<line x1="${fA[0]}" y1="${fA[1]}" x2="${tA[0]}" y2="${tA[1]}" stroke="#cfd6cd" stroke-width="2"/>`;
       if(fB) net += `<line x1="${fB[0]}" y1="${fB[1]}" x2="${tB[0]}" y2="${tB[1]}" stroke="#cfd6cd" stroke-width="2"/>`;
     }
     gid("net").innerHTML = net;
-    // serve zone
     gid("zone").innerHTML = (pend && SHOTS[curShot()].serve)
       ? (()=>{ const b=serveBox(pend.from.x,pend.from.y);
           const pts=[proj(b.x1,b.y1,0),proj(b.x2,b.y1,0),proj(b.x2,b.y2,0),proj(b.x1,b.y2,0)];
           return pts.every(Boolean) ? `<polygon points="${polyPts(pts)}" fill="rgba(164,221,43,.20)" stroke="#a4dd2b" stroke-width="1.4" stroke-dasharray="6 4"/>` : ""; })()
       : "";
-    // routes
     gid("routes").innerHTML = steps.map((st,i)=>{
       if(st.rec) return "";
       const sh=SHOTS[st.shot]||SHOTS.clear;
-      const tr={x1:st.from.x,y1:st.from.y,x2:st.to.x,y2:st.to.y,z0:sh.z0,h:sh.h};
+      const tr=clearNet({x1:st.from.x,y1:st.from.y,x2:st.to.x,y2:st.to.y,z0:sh.z0,h:sh.h});
       let d="",ok=true;
       for(let k=0;k<=22;k++){ const fp=flightPos(tr,k/22), p=proj(fp.x,fp.y,fp.z); if(!p){ok=false;break;} d+=(k?"L":"M")+p[0].toFixed(1)+" "+p[1].toFixed(1)+" "; }
       if(!ok) return "";
-      const land=proj(st.to.x,st.to.y,0), mid=proj((st.from.x+st.to.x)/2,(st.from.y+st.to.y)/2,Math.max(sh.z0*0.5,sh.h*0.9));
+      const land=proj(st.to.x,st.to.y,0), mid=proj((st.from.x+st.to.x)/2,(st.from.y+st.to.y)/2,Math.max(tr.z0*0.5,tr.h*0.9));
       return `<path d="${d}" fill="none" stroke="${st.color}" stroke-width="${i===activeIdx?2.6:1.5}" opacity="${i===activeIdx?0.95:0.5}" stroke-dasharray="${i===activeIdx?"none":"5 4"}"/>
         ${land?`<circle cx="${land[0]}" cy="${land[1]}" r="3.4" fill="none" stroke="${st.color}" stroke-width="1.3" opacity="0.8"/>`:""}
         ${st.out&&land?`<text x="${land[0]}" y="${land[1]-6}" font-size="10" fill="#ff7b7b" text-anchor="middle">OUT</text>`:""}
         ${mid?`<g transform="translate(${mid[0]},${mid[1]})"><circle r="7.2" fill="#0c1410" stroke="${st.color}" stroke-width="1.2"/><text y="3.3" font-size="9" fill="${st.color}" text-anchor="middle" font-weight="700">${stepNo(i)}</text></g>`:""}`;
     }).join("");
-    // pending ring
     if(pend){ const c=proj(pend.from.x,pend.from.y,0); if(c){ gid("ring").setAttribute("cx",c[0]); gid("ring").setAttribute("cy",c[1]); gid("ring").setAttribute("opacity","1"); } }
     else gid("ring").setAttribute("opacity","0");
   }
@@ -220,9 +263,9 @@ export function mountProCourt(container, opts){
     const anchor = proj(st.x, st.y, 0);
     if(!anchor) return { svg:"", far: st.y>CT.NET };
     if(basis.bird){
-      return { far: st.y>CT.NET, svg:`<circle cx="${anchor[0]}" cy="${anchor[1]}" r="9" fill="${pl.jersey}" stroke="#0c1410" stroke-width="1.4"/><text x="${anchor[0]}" y="${anchor[1]+3.4}" font-size="9" text-anchor="middle" fill="#0c1410" font-weight="700">${pl.p}</text>` };
+      return { far: st.y>CT.NET, svg:`<circle cx="${anchor[0]}" cy="${anchor[1]}" r="7.5" fill="${pl.jersey}" stroke="#0c1410" stroke-width="1.3"/><text x="${anchor[0]}" y="${anchor[1]+3.1}" font-size="8" text-anchor="middle" fill="#0c1410" font-weight="700">${pl.p}</text>` };
     }
-    const FIG = 0.8;   // athlete display scale — smaller, neater figures
+    const FIG = 0.8;
     const s = cam.F/anchor[2];
     const J = poseJoints(st.pose, st.blend==null?1:st.blend, st.poseFrom);
     const P = (j)=>{ const lx=J[j][0]*st.face*FIG, lz=(J[j][1]+(st.zoff||0))*FIG;
@@ -255,7 +298,6 @@ export function mountProCourt(container, opts){
     const prev = (px!=null) ? proj(px,py==null?y:py, z) : null;
     let ang=0;
     if(prev) ang=Math.atan2(p[1]-prev[1],p[0]-prev[0])*180/Math.PI;
-    // metric size, clamped — a shuttle is small, always
     const s=clamp(cam.F/p[2]*0.022, 0.55, 1.9);
     const g=proj(x,y,0);
     const shR = g ? clamp(0.09*cam.F/g[2]*(1+z*0.25), 1.5, 6) : 0;
@@ -269,63 +311,75 @@ export function mountProCourt(container, opts){
       + `</g>`;
   }
 
-  // ---------- timeline (compiled, seekable) ----------
+  // ---------- timeline ----------
+  function nearestOf(P, x, y, prefix){
+    let best=null, bd=1e9;
+    players.forEach(pl=>{
+      if(prefix && pl.p[0]!==prefix) return;
+      if(pl.feeder) return;
+      const q=P[pl.p]; if(!q) return;
+      const d=(q.x-x)*(q.x-x)+(q.y-y)*(q.y-y);
+      if(d<bd){ bd=d; best=pl.p; }
+    });
+    return best;
+  }
   function compile(){
     const movers=[], flights=[], poses=[], fx=[], segs=[];
     const P={}; players.forEach(pl=>P[pl.p]={x:pl.base.x,y:pl.base.y});
     let t=0;
+    const oneVone = feed!=="multi" && meta.nA===1 && meta.nB===1;
     const nextHit=(i)=>{ for(let k=i+1;k<steps.length;k++){ if(!steps[k].rec) return steps[k]; } return null; };
     steps.forEach((st,i)=>{
       const seg0=t;
       if(st.rec){
+        if(!P[st.p]){ segs.push([seg0,t,i]); return; }
         const dur=clamp(dist2(P[st.p],st.to)/4.5,0.3,1.3);
         movers.push({p:st.p,from:{...P[st.p]},to:{...st.to},t0:t,t1:t+dur});
         P[st.p]={...st.to}; t+=dur; segs.push([seg0,t,i]); return;
       }
       const sh=SHOTS[st.shot]||SHOTS.clear;
-      const hitter = feed==="multi" ? "A" : (st.from.y<CT.NET?"A":"B");
-      const runDur=clamp(dist2(P[hitter],st.from)/5,0.25,1.2);
-      movers.push({p:hitter,from:{...P[hitter]},to:{...st.from},t0:t,t1:t+runDur});
-      P[hitter]={...st.from};
-      const prep=0.16, contact=t+runDur+prep;
+      const side = st.from.y<CT.NET ? "A" : "B";
+      let hitter = (st.hitter && P[st.hitter]) ? st.hitter : nearestOf(P, st.from.x, st.from.y, feed==="multi"?"A":side);
+      if(!hitter){ segs.push([seg0,t,i]); return; }
+      let contact;
       if(feed==="multi"){
-        const f=P["C"]||{x:CT.CX,y:7.6};
-        flights.push({t0:contact-0.6,t1:contact,tr:{x1:f.x,y1:f.y,x2:st.from.x,y2:st.from.y,z0:1.15,h:1.0},feed:true,idx:i});
-        poses.push({p:"C",pose:"serve",t0:contact-0.7,t1:contact-0.3});
+        // direct hit: the player is ALREADY at the receive point — no run-up
+        movers.push({p:hitter,from:{...st.from},to:{...st.from},t0:t,t1:t+0.01});
+        P[hitter]={...st.from};
+        contact = t+0.78;
+        const f=P["C"]||meta.feeder;
+        flights.push({t0:t+0.15,t1:contact,tr:clearNet({x1:f.x,y1:f.y,x2:st.from.x,y2:st.from.y,z0:1.15,h:1.0}),feed:true,idx:i});
+        poses.push({p:"C",pose:"serve",t0:t+0.08,t1:t+0.45});
+        poses.push({p:hitter,pose:sh.pose,t0:contact-0.28,t1:contact+0.2});
+      }else{
+        const runDur=clamp(dist2(P[hitter],st.from)/5,0.25,1.2);
+        movers.push({p:hitter,from:{...P[hitter]},to:{...st.from},t0:t,t1:t+runDur});
+        P[hitter]={...st.from};
+        contact = t+runDur+0.16;
+        poses.push({p:hitter,pose:sh.pose,t0:t+runDur,t1:contact+0.2});
       }
-      poses.push({p:hitter,pose:sh.pose,t0:t+runDur,t1:contact+0.2});
-      flights.push({t0:contact,t1:contact+sh.dur,tr:{x1:st.from.x,y1:st.from.y,x2:st.to.x,y2:st.to.y,z0:sh.z0,h:sh.h},idx:i,color:st.color});
+      flights.push({t0:contact,t1:contact+sh.dur,tr:clearNet({x1:st.from.x,y1:st.from.y,x2:st.to.x,y2:st.to.y,z0:sh.z0,h:sh.h}),idx:i,color:st.color});
       fx.push({kind:"hit",t:contact,x:st.from.x,y:st.from.y,z:sh.z0});
       fx.push({kind:"land",t:contact+sh.dur,x:st.to.x,y:st.to.y,out:st.out});
-      // real-rally movement: BOTH players move at once during the flight —
-      // the receiver covers / goes to their hit point, the hitter recovers.
-      const nh=nextHit(i);
-      if(feed!=="multi"){
-        const other = hitter==="A"?"B":"A";
-        const nextHitter = nh ? (nh.from.y<CT.NET?"A":"B") : null;
+      // automatic rally movement only in pure 1v1 drills — with more players
+      // the coach choreographs everything with Move steps.
+      if(oneVone){
+        const nh=nextHit(i);
+        const other = hitter==="A1"?"B1":"A1";
+        const nextHitter = nh ? ((nh.hitter && P[nh.hitter])?nh.hitter:(nh.from.y<CT.NET?"A1":"B1")) : null;
         const dest = (nextHitter===other) ? {...nh.from} : {...players.find(q=>q.p===other).base};
         const md=clamp(dist2(P[other],dest)/5,0.2,Math.max(0.4,sh.dur));
         movers.push({p:other,from:{...P[other]},to:dest,t0:contact,t1:contact+md});
         P[other]=dest;
-        // fast attacking shot incoming → receiver sinks into defensive stance
-        if(st.shot==="smash"||st.shot==="jsmash"||st.shot==="halfsmash"||st.shot==="kill"||st.shot==="drive")
-          poses.push({p:other,pose:"defense",t0:contact+sh.dur*0.35,t1:contact+sh.dur+0.15});
-        // hitter recovers to base simultaneously (unless they hit again next)
+        if(FAST[st.shot]) poses.push({p:other,pose:"defense",t0:contact+sh.dur*0.35,t1:contact+sh.dur+0.15});
         if(nextHitter!==hitter){
           const hb=players.find(q=>q.p===hitter).base;
           const hd=clamp(dist2(P[hitter],hb)/4.5,0.3,1.3);
           movers.push({p:hitter,from:{...P[hitter]},to:{...hb},t0:contact+0.12,t1:contact+0.12+hd});
           P[hitter]={...hb};
         }
-      }else{
-        // trainee recovers to base between feeds unless next feed is close
-        const dest = (nh) ? {...nh.from} : {...players[0].base};
-        const back = {...players[0].base};
-        const md=clamp(dist2(P["A"],back)/5,0.2,0.8);
-        movers.push({p:"A",from:{...P["A"]},to:back,t0:contact+0.15,t1:contact+0.15+md});
-        P["A"]=back;
       }
-      t=contact+sh.dur+0.3;
+      t=contact+sh.dur+(feed==="multi"?0.35:0.3);
       segs.push([seg0,t,i]);
     });
     return { movers, flights, poses, fx, segs, total:t };
@@ -333,7 +387,7 @@ export function mountProCourt(container, opts){
 
   function evalAt(t){
     const st={};
-    players.forEach(pl=>{ st[pl.p]={ x:pl.base.x, y:pl.base.y, pose:pl.feeder?"feeder":"ready", poseFrom:pl.feeder?"feeder":"ready", blend:1, face:pl.p==="B"?-1:1, zoff:0, moving:false }; });
+    players.forEach(pl=>{ st[pl.p]={ x:pl.base.x, y:pl.base.y, pose:pl.feeder?"feeder":"ready", poseFrom:pl.feeder?"feeder":"ready", blend:1, face:pl.p[0]==="B"?-1:1, zoff:0, moving:false }; });
     tl.movers.forEach(m=>{
       const s=st[m.p]; if(!s) return;
       if(t>=m.t1){ s.x=m.to.x; s.y=m.to.y; }
@@ -346,7 +400,7 @@ export function mountProCourt(container, opts){
       const s=st[pe.p]; if(!s) return;
       if(t>=pe.t0 && t<=pe.t1+0.15){
         const inK=clamp((t-pe.t0)/0.15,0,1), outK=clamp((t-pe.t1)/0.15,0,1);
-        s.pose=pe.pose; s.poseFrom = s.moving?"run":"ready"; s.blend = inK*(1-outK*0);
+        s.pose=pe.pose; s.poseFrom = s.moving?"run":"ready"; s.blend = inK;
         if(t>pe.t1) s.blend = 1-outK;
       }
     });
@@ -364,7 +418,7 @@ export function mountProCourt(container, opts){
     const { st, shuttle } = tl ? evalAt(t) : { st:null, shuttle:null };
     let far="", near="";
     players.forEach(pl=>{
-      const ps = st ? st[pl.p] : { x:pl.base.x, y:pl.base.y, pose:pl.feeder?"feeder":"ready", poseFrom:"ready", blend:1, face:pl.p==="B"?-1:1, zoff:0 };
+      const ps = st ? st[pl.p] : { x:pl.base.x, y:pl.base.y, pose:pl.feeder?"feeder":"ready", poseFrom:"ready", blend:1, face:pl.p[0]==="B"?-1:1, zoff:0 };
       const fig=figureSVG(pl, ps);
       if(fig.far) far+=fig.svg; else near+=fig.svg;
     });
@@ -374,7 +428,6 @@ export function mountProCourt(container, opts){
       if(tl && shuttle.idx!==activeIdx){ activeIdx=shuttle.idx; renderStatic(); markList(activeIdx); showNote(activeIdx); }
     }
     gid("far").innerHTML=far; gid("near").innerHTML=near;
-    // fx
     let fxs="";
     if(tl) tl.fx.forEach(e=>{
       const dt=t-e.t;
@@ -393,10 +446,10 @@ export function mountProCourt(container, opts){
   function paintList(){
     const el=gid("list"); if(!el) return;
     el.innerHTML = steps.length ? steps.map((s,i)=>{
-      const name = s.rec ? "Recover to base" : (SHOTS[s.shot]||{}).name||s.shot;
+      const name = s.rec ? esc(s.p)+" → moves" : ((SHOTS[s.shot]||{}).name||s.shot);
       return `<div data-st="${i}" style="display:flex;gap:8px;align-items:center;padding:7px 10px;border:1px solid ${i===activeIdx?"var(--brand)":"var(--line)"};border-radius:9px;cursor:pointer;">
         <span style="width:8px;height:8px;border-radius:50%;background:${s.rec?"#888":s.color};flex:0 0 auto;"></span>
-        <div style="flex:1;font-size:13px;">${s.rec?"":"<b>"+stepNo(i)+".</b> "}${esc(name)}${s.out?` <span style="color:#ff7b7b;font-size:11px;">OUT</span>`:""}${s.note?`<div class="muted" style="font-size:12px;">${esc(s.note)}</div>`:""}</div>
+        <div style="flex:1;font-size:13px;">${s.rec?"":"<b>"+stepNo(i)+".</b> "}${esc(name)}${(!s.rec&&s.hitter)?` <span class="muted" style="font-size:11px;">· ${esc(s.hitter)}</span>`:""}${s.out?` <span style="color:#ff7b7b;font-size:11px;">OUT</span>`:""}${s.note?`<div class="muted" style="font-size:12px;">${esc(s.note)}</div>`:""}</div>
         ${editing?`<button class="btn" data-del="${i}" style="padding:2px 8px;font-size:11px;">✕</button>`:""}
       </div>`;
     }).join("") : `<div class="muted" style="font-size:12px;">${editing?"No shots yet — pick a shot + colour, tap where it's hit from, then where it lands.":"No shots in this drill yet."}</div>`;
@@ -424,24 +477,57 @@ export function mountProCourt(container, opts){
     const sp=pt.matrixTransform(m.inverse());
     return floorPoint(sp.x, sp.y);
   }
+  function curPositions(){
+    if(!tl) tl=compile();
+    const snap=evalAt(tl.total), out={};
+    players.forEach(pl=>{ out[pl.p]={x:snap.st[pl.p].x, y:snap.st[pl.p].y}; });
+    return out;
+  }
   function onTap(evt){
     if(!editing || playing) return;
     const c=svgXY(evt); if(!c) return;
+    // place-feeder tool
+    if(fdOn){
+      meta.feeder={x:+c.x.toFixed(2), y:+c.y.toFixed(2)};
+      const fp=players.find(q=>q.p==="C"); if(fp) fp.base={...meta.feeder};
+      fdOn=false; gid("fd").classList.remove("on");
+      hint("Feeder placed. He'll feed every shuttle from there.");
+      afterStepsChange(); return;
+    }
+    // move tool: pick a player, then a destination
+    if(mvOn){
+      if(!mvSel){
+        const P=curPositions();
+        let best=null,bd=1e9;
+        players.forEach(pl=>{ const q=P[pl.p], d=(q.x-c.x)*(q.x-c.x)+(q.y-c.y)*(q.y-c.y); if(d<bd){bd=d;best=pl.p;} });
+        mvSel=best;
+        hint("Now tap where "+mvSel+" should go.");
+        return;
+      }
+      steps.push({ rec:true, p:mvSel, to:{x:+c.x.toFixed(2), y:+c.y.toFixed(2)} });
+      const done=mvSel; mvSel=null; mvOn=false; gid("mv").classList.remove("on");
+      afterStepsChange(); previewSeg(steps.length-1);
+      hint(done+" movement added.");
+      return;
+    }
     const sh=SHOTS[curShot()];
     if(!pend){
       if(feed==="multi" && c.y>=CT.NET-0.15){ hint("Tap on the player's side — the feeder sends shuttles there.", true); return; }
-      pend={ from:{x:+c.x.toFixed(2), y:+c.y.toFixed(2)} };
-      hint(sh.serve ? "Legal service court highlighted — tap where the serve lands." : "Now tap where the "+sh.name.toLowerCase()+" lands.");
+      const P=curPositions();
+      const side = c.y<CT.NET ? "A" : "B";
+      const hitter = nearestOf(P, c.x, c.y, feed==="multi" ? "A" : side);
+      pend={ from:{x:+c.x.toFixed(2), y:+c.y.toFixed(2)}, hitter };
+      hint(sh.serve ? "Legal service court highlighted — tap where the serve lands." : "Now tap where the "+sh.name.toLowerCase()+" lands"+(hitter?" ("+hitter+" hits)":"")+".");
       renderStatic(); return;
     }
     if(sh.serve && !inBox(serveBox(pend.from.x,pend.from.y), c.x, c.y)){ hint("Illegal serve — it must land in the highlighted diagonal box.", true); return; }
     if(!sh.serve && feed!=="multi" && ((c.y<CT.NET)===(pend.from.y<CT.NET))){ hint("The shuttle must cross the net — tap the other side.", true); return; }
-    const st={ shot:curShot(), color:drawColor, from:pend.from, to:{x:+c.x.toFixed(2), y:+c.y.toFixed(2)}, note:"" };
+    const st={ shot:curShot(), color:drawColor, from:pend.from, to:{x:+c.x.toFixed(2), y:+c.y.toFixed(2)}, hitter:pend.hitter, note:"" };
     st.out = !sh.serve && !inSingles(st.to.x, st.to.y);
     steps.push(st); pend=null;
     const ni=steps.length-1;
     afterStepsChange();
-    hint("Added. Tap the next shot, Recover, or ▶ Play.");
+    hint("Added. Next shot, Move a player, or ▶ Play.");
     previewSeg(ni);
   }
   function afterStepsChange(){
@@ -492,7 +578,7 @@ export function mountProCourt(container, opts){
   // ---------- wire ----------
   gid("svg").addEventListener("pointerdown", onTap);
   Object.keys(CAMS).forEach(k=>{ gid("cam_"+k).onclick=()=>setCam(k); });
-  gid("play").onclick=()=>{ if(playing){ stop(); } else if(tl && tCur>0 && tCur<tl.total){ lastTs=0; playing=true; gid("play").textContent="❚❚ Pause"; raf=requestAnimationFrame(loop); } else { tCur=0; activeIdx=-1; playFrom(0, tl?tl.total:0); } };
+  gid("play").onclick=()=>{ if(playing){ stop(); } else if(tl && tCur>0 && tCur<stopAt){ lastTs=0; playing=true; gid("play").textContent="❚❚ Pause"; raf=requestAnimationFrame(loop); } else { tCur=0; activeIdx=-1; playFrom(0, tl?tl.total:0); } };
   gid("rst").onclick=()=>{ stop(); tCur=0; activeIdx=-1; renderStatic(); renderDynamic(0); markList(-1); showNote(-1); };
   if(editing){
     DCOLS.forEach(c=>{
@@ -502,17 +588,30 @@ export function mountProCourt(container, opts){
       gid("pal").appendChild(b);
     });
     gid("shot").onchange=()=>{ pend=null; renderStatic(); hint(SHOTS[curShot()].serve?"Serve: tap where the server stands — the legal box will light up.":"Tap where the shot is hit from."); };
+    gid("mv").onclick=function(){ mvOn=!mvOn; mvSel=null; fdOn=false; const f=gid("fd"); if(f) f.classList.remove("on"); this.classList.toggle("on",mvOn); pend=null; renderStatic(); hint(mvOn?"Move: tap a player to pick them up.":"Move cancelled."); };
+    const fd=gid("fd");
+    if(fd) fd.onclick=function(){ fdOn=!fdOn; mvOn=false; mvSel=null; gid("mv").classList.remove("on"); this.classList.toggle("on",fdOn); pend=null; renderStatic(); hint(fdOn?"Tap anywhere on the court to place the feeder.":"Feeder placement cancelled."); };
     gid("rec").onclick=()=>{
-      let p="A";
-      for(let i=steps.length-1;i>=0;i--){ if(!steps[i].rec){ p = feed==="multi" ? "A" : (steps[i].from.y<CT.NET?"A":"B"); break; } }
-      const base=players.find(q=>q.p===p).base;
-      steps.push({ rec:true, p, to:{...base} });
+      let p="A1";
+      for(let i=steps.length-1;i>=0;i--){ if(!steps[i].rec){ p = steps[i].hitter || (feed==="multi" ? "A1" : (steps[i].from.y<CT.NET?"A1":"B1")); break; } }
+      const pl=players.find(q=>q.p===p); if(!pl) return;
+      steps.push({ rec:true, p, to:{...pl.base} });
       afterStepsChange(); previewSeg(steps.length-1);
     };
     gid("undo").onclick=()=>{ steps.pop(); afterStepsChange(); };
     gid("clr").onclick=()=>{ steps=[]; afterStepsChange(); };
     gid("noteIn").oninput=function(){ for(let i=steps.length-1;i>=0;i--){ if(!steps[i].rec){ steps[i].note=this.value; paintList(); break; } } };
-    hint(feed==="multi" ? "Multi-shuttle: tap where the feed lands, then where the player's answer goes." : "Pick a shot + colour, tap where it's hit from, then where it lands.");
+    if(feed!=="multi"){
+      const setN=(team,delta)=>{
+        if(team==="A") meta.nA=clamp(meta.nA+delta,1,4); else meta.nB=clamp(meta.nB+delta,1,4);
+        gid("an").textContent=meta.nA; gid("bn").textContent=meta.nB;
+        players=buildPlayers(); afterStepsChange();
+        hint("Squad: "+meta.nA+" vs "+meta.nB+". Tap near a player to make them the hitter.");
+      };
+      gid("ap").onclick=()=>setN("A",1); gid("am").onclick=()=>setN("A",-1);
+      gid("bp").onclick=()=>setN("B",1); gid("bm").onclick=()=>setN("B",-1);
+    }
+    hint(feed==="multi" ? "Multi-shuttle: tap where the feed lands (the player hits directly from there), then where the answer goes." : "Pick a shot + colour, tap where it's hit from, then where it lands.");
   }else{
     hint("Press ▶ Play — and try the camera angles while it runs.");
   }
@@ -520,7 +619,7 @@ export function mountProCourt(container, opts){
   renderStatic(); renderDynamic(tl.total||0); paintList();
 
   return {
-    getPoints: ()=> JSON.parse(JSON.stringify(steps)),
+    getPoints: ()=> JSON.parse(JSON.stringify({ steps, feeder:meta.feeder, nA:meta.nA, nB:meta.nB })),
     hasShots: ()=> steps.some(s=>!s.rec),
     getView: ()=> "broadcast",
     destroy: ()=> stop()
