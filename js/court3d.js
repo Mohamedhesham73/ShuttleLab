@@ -82,13 +82,15 @@ function serveBox(sx,sy){
 }
 const inBox=(b,x,y)=> x>=b.x1-0.05 && x<=b.x2+0.05 && y>=b.y1-0.05 && y<=b.y2+0.05;
 const inSingles=(x,y)=> x>=CT.SIN-0.05 && x<=CT.SXL+0.05 && y>=-0.05 && y<=CT.L+0.05;
-function flightPos(tr,k){ return { x:tr.x1+(tr.x2-tr.x1)*k, y:tr.y1+(tr.y2-tr.y1)*k, z:tr.z0*(1-k)+tr.h*Math.sin(Math.PI*k) }; }
+// tr.z1 = arrival height (0 = lands on the floor; contact height when the
+// next player takes it straight out of the air)
+function flightPos(tr,k){ return { x:tr.x1+(tr.x2-tr.x1)*k, y:tr.y1+(tr.y2-tr.y1)*k, z:tr.z0*(1-k)+(tr.z1||0)*k+tr.h*Math.sin(Math.PI*k) }; }
 // lift any net-crossing trajectory so it clears the real tape (1.55 m)
 function clearNet(tr){
   if((tr.y1<CT.NET)===(tr.y2<CT.NET)) return tr;
   const k=(CT.NET-tr.y1)/((tr.y2-tr.y1)||0.001), sk=Math.max(0.05,Math.sin(Math.PI*k));
-  const z=tr.z0*(1-k)+tr.h*sk;
-  if(z < CT.NETH+0.05) tr.h=(CT.NETH+0.05-tr.z0*(1-k))/sk;
+  const z=tr.z0*(1-k)+(tr.z1||0)*k+tr.h*sk;
+  if(z < CT.NETH+0.05) tr.h=(CT.NETH+0.05-tr.z0*(1-k)-(tr.z1||0)*k)/sk;
   return tr;
 }
 
@@ -100,22 +102,23 @@ export function mountProCourt(container, opts){
   const gid = s => container.querySelector("#"+uid+s);
 
   // ---- saved data (legacy array OR {steps, feeder, nA, nB}) ----
-  let meta = { nA:1, nB:1, feeder:{x:3.05,y:7.6} };
+  let meta = { nA:1, nB:1, feeder:{x:3.05,y:7.6}, bases:{} };
   let steps = [];
   if(Array.isArray(opts.points)) steps = JSON.parse(JSON.stringify(opts.points));
   else if(opts.points && typeof opts.points==="object"){
     steps = JSON.parse(JSON.stringify(opts.points.steps||[]));
     meta.nA = clamp(opts.points.nA||1,1,4); meta.nB = clamp(opts.points.nB||1,1,4);
     if(opts.points.feeder) meta.feeder = { x:opts.points.feeder.x, y:opts.points.feeder.y };
+    if(opts.points.bases) meta.bases = JSON.parse(JSON.stringify(opts.points.bases));
   }
   steps.forEach(s=>{ if(s.p==="A")s.p="A1"; if(s.p==="B")s.p="B1"; if(s.hitter==="A")s.hitter="A1"; if(s.hitter==="B")s.hitter="B1"; });
 
   function spread(n){ return n===1?[3.05]: n===2?[1.8,4.3]: n===3?[1.2,3.05,4.9]:[0.9,2.5,3.6,5.2]; }
   function buildPlayers(){
-    const arr=[];
-    spread(meta.nA).forEach((x,i)=>arr.push({ p:"A"+(i+1), jersey:"#a4dd2b", base:{x, y:3.8} }));
+    const arr=[], bx=meta.bases||{};
+    spread(meta.nA).forEach((x,i)=>{ const id="A"+(i+1); arr.push({ p:id, jersey:"#a4dd2b", base: bx[id]?{...bx[id]}:{x, y:3.8} }); });
     if(feed==="multi") arr.push({ p:"C", jersey:"#aab4ab", base:{...meta.feeder}, feeder:true });
-    else spread(meta.nB).forEach((x,i)=>arr.push({ p:"B"+(i+1), jersey:"#5db9ff", base:{x, y:9.6} }));
+    else spread(meta.nB).forEach((x,i)=>{ const id="B"+(i+1); arr.push({ p:id, jersey:"#5db9ff", base: bx[id]?{...bx[id]}:{x, y:9.6} }); });
     return arr;
   }
   let players = buildPlayers();
@@ -161,6 +164,7 @@ export function mountProCourt(container, opts){
     ${editing ? `
     <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
       <select id="${uid}shot" style="flex:1;min-width:130px;">${SHOT_ORDER.map(k=>`<option value="${k}">${SHOTS[k].name}</option>`).join("")}</select>
+      <span class="chip" id="${uid}ss">Set start</span>
       <span class="chip" id="${uid}mv">Move</span>
       ${feed==="multi" ? `<span class="chip" id="${uid}fd">Place feeder</span>` : ``}
       <button class="btn" id="${uid}rec" style="padding:7px 11px;font-size:12px;">Recover</button>
@@ -196,6 +200,7 @@ export function mountProCourt(container, opts){
   let tCur = 0, stopAt = 0, lastTs = 0, activeIdx = -1;
   let tl = null;
   let mvSel = null, mvOn = false, fdOn = false;   // Move tool / Place-feeder tool
+  let ssSel = null, ssOn = false;                 // Set-start tool (positions, not steps)
 
   // ---------- static rendering ----------
   function polyPts(arr){ return arr.filter(Boolean).map(p=>p[0].toFixed(1)+","+p[1].toFixed(1)).join(" "); }
@@ -326,63 +331,90 @@ export function mountProCourt(container, opts){
   function compile(){
     const movers=[], flights=[], poses=[], fx=[], segs=[];
     const P={}; players.forEach(pl=>P[pl.p]={x:pl.base.x,y:pl.base.y});
-    let t=0;
+    const avail={}; players.forEach(pl=>avail[pl.p]=0);
     const oneVone = feed!=="multi" && meta.nA===1 && meta.nB===1;
     const nextHit=(i)=>{ for(let k=i+1;k<steps.length;k++){ if(!steps[k].rec) return steps[k]; } return null; };
+    let prevFlight=null, tEnd=0, lastContact=0;
+
     steps.forEach((st,i)=>{
-      const seg0=t;
       if(st.rec){
-        if(!P[st.p]){ segs.push([seg0,t,i]); return; }
-        const dur=clamp(dist2(P[st.p],st.to)/4.5,0.3,1.3);
-        movers.push({p:st.p,from:{...P[st.p]},to:{...st.to},t0:t,t1:t+dur});
-        P[st.p]={...st.to}; t+=dur; segs.push([seg0,t,i]); return;
+        if(!P[st.p]){ segs.push([tEnd,tEnd,i]); return; }
+        // choreographed movement runs IN PARALLEL with the rally, not after it
+        const t0=Math.max(avail[st.p], lastContact?lastContact+0.12:0);
+        const dur=clamp(dist2(P[st.p],st.to)/4.8,0.25,1.3);
+        movers.push({p:st.p,from:{...P[st.p]},to:{...st.to},t0,t1:t0+dur});
+        P[st.p]={...st.to}; avail[st.p]=t0+dur;
+        tEnd=Math.max(tEnd,t0+dur);
+        segs.push([t0,t0+dur,i]);
+        return;
       }
       const sh=SHOTS[st.shot]||SHOTS.clear;
       const side = st.from.y<CT.NET ? "A" : "B";
-      let hitter = (st.hitter && P[st.hitter]) ? st.hitter : nearestOf(P, st.from.x, st.from.y, feed==="multi"?"A":side);
-      if(!hitter){ segs.push([seg0,t,i]); return; }
-      let contact;
+      const hitter = (st.hitter && P[st.hitter]) ? st.hitter : nearestOf(P, st.from.x, st.from.y, feed==="multi"?"A":side);
+      if(!hitter){ segs.push([tEnd,tEnd,i]); return; }
+      let contact, seg0;
+      const chained = feed!=="multi" && prevFlight && dist2(prevFlight.to, st.from)<0.5;
       if(feed==="multi"){
-        // direct hit: the player is ALREADY at the receive point — no run-up
-        movers.push({p:hitter,from:{...st.from},to:{...st.from},t0:t,t1:t+0.01});
+        // reposition while the feeder reloads, then strike the feed DIRECTLY —
+        // the feed arrives exactly at the player's contact point and height
+        const tSnap=Math.max(avail[hitter], prevFlight?prevFlight.t1+0.05:0.1);
+        const gd=clamp(dist2(P[hitter],st.from)/6,0.05,0.4);
+        movers.push({p:hitter,from:{...P[hitter]},to:{...st.from},t0:tSnap,t1:tSnap+gd});
         P[hitter]={...st.from};
-        contact = t+0.78;
-        const f=P["C"]||meta.feeder;
-        flights.push({t0:t+0.15,t1:contact,tr:clearNet({x1:f.x,y1:f.y,x2:st.from.x,y2:st.from.y,z0:1.15,h:1.0}),feed:true,idx:i});
-        poses.push({p:"C",pose:"serve",t0:t+0.08,t1:t+0.45});
-        poses.push({p:hitter,pose:sh.pose,t0:contact-0.28,t1:contact+0.2});
+        const tFeed=tSnap+gd+0.15;
+        contact=tFeed+0.6; seg0=tSnap;
+        flights.push({t0:tFeed,t1:contact,tr:clearNet({x1:meta.feeder.x,y1:meta.feeder.y,x2:st.from.x,y2:st.from.y,z0:1.15,z1:sh.z0,h:0.9}),feed:true,idx:i});
+        poses.push({p:"C",pose:"serve",t0:tFeed-0.12,t1:tFeed+0.3});
+        poses.push({p:hitter,pose:sh.pose,t0:contact-0.25,t1:contact+0.2});
+      }else if(chained){
+        // rally continuity: arrive DURING the incoming flight and take the
+        // shuttle out of the air the instant it reaches the contact point
+        contact=prevFlight.t1; seg0=prevFlight.t0;
+        let t0=Math.max(avail[hitter], prevFlight.t0+0.05);
+        if(t0>contact-0.15) t0=Math.max(0,contact-0.3);
+        const t1=Math.min(contact-0.05, t0+clamp(dist2(P[hitter],st.from)/5,0.12,1.2));
+        movers.push({p:hitter,from:{...P[hitter]},to:{...st.from},t0,t1:Math.max(t1,t0+0.08)});
+        P[hitter]={...st.from};
+        poses.push({p:hitter,pose:sh.pose,t0:contact-0.22,t1:contact+0.2});
       }else{
+        const t0=Math.max(avail[hitter], prevFlight?prevFlight.t1:0);
         const runDur=clamp(dist2(P[hitter],st.from)/5,0.25,1.2);
-        movers.push({p:hitter,from:{...P[hitter]},to:{...st.from},t0:t,t1:t+runDur});
+        movers.push({p:hitter,from:{...P[hitter]},to:{...st.from},t0,t1:t0+runDur});
         P[hitter]={...st.from};
-        contact = t+runDur+0.16;
-        poses.push({p:hitter,pose:sh.pose,t0:t+runDur,t1:contact+0.2});
+        contact=t0+runDur+0.16; seg0=t0;
+        poses.push({p:hitter,pose:sh.pose,t0:t0+runDur,t1:contact+0.2});
       }
-      flights.push({t0:contact,t1:contact+sh.dur,tr:clearNet({x1:st.from.x,y1:st.from.y,x2:st.to.x,y2:st.to.y,z0:sh.z0,h:sh.h}),idx:i,color:st.color});
+      avail[hitter]=contact+0.2;
+      // if the NEXT shot is played from this landing spot, the shuttle never
+      // touches the ground — it flies to the next player's contact height
+      const nh=nextHit(i);
+      const willChain = feed!=="multi" && nh && dist2(nh.from, st.to)<0.5;
+      const z1 = willChain ? (SHOTS[nh.shot]||SHOTS.clear).z0 : 0;
+      flights.push({t0:contact,t1:contact+sh.dur,tr:clearNet({x1:st.from.x,y1:st.from.y,x2:st.to.x,y2:st.to.y,z0:sh.z0,z1,h:sh.h}),idx:i,color:st.color});
       fx.push({kind:"hit",t:contact,x:st.from.x,y:st.from.y,z:sh.z0});
-      fx.push({kind:"land",t:contact+sh.dur,x:st.to.x,y:st.to.y,out:st.out});
-      // automatic rally movement only in pure 1v1 drills — with more players
-      // the coach choreographs everything with Move steps.
+      if(!willChain) fx.push({kind:"land",t:contact+sh.dur,x:st.to.x,y:st.to.y,out:st.out});
+      // automatic rally habits in pure 1v1 (with squads the coach choreographs)
       if(oneVone){
-        const nh=nextHit(i);
         const other = hitter==="A1"?"B1":"A1";
-        const nextHitter = nh ? ((nh.hitter && P[nh.hitter])?nh.hitter:(nh.from.y<CT.NET?"A1":"B1")) : null;
-        const dest = (nextHitter===other) ? {...nh.from} : {...players.find(q=>q.p===other).base};
-        const md=clamp(dist2(P[other],dest)/5,0.2,Math.max(0.4,sh.dur));
-        movers.push({p:other,from:{...P[other]},to:dest,t0:contact,t1:contact+md});
-        P[other]=dest;
         if(FAST[st.shot]) poses.push({p:other,pose:"defense",t0:contact+sh.dur*0.35,t1:contact+sh.dur+0.15});
-        if(nextHitter!==hitter){
+        const nhh = nh ? ((nh.hitter&&P[nh.hitter])?nh.hitter:(nh.from.y<CT.NET?"A1":"B1")) : null;
+        if(nhh!==hitter){
           const hb=players.find(q=>q.p===hitter).base;
-          const hd=clamp(dist2(P[hitter],hb)/4.5,0.3,1.3);
-          movers.push({p:hitter,from:{...P[hitter]},to:{...hb},t0:contact+0.12,t1:contact+0.12+hd});
+          movers.push({p:hitter,from:{...P[hitter]},to:{...hb},t0:contact+0.15,t1:contact+0.15+clamp(dist2(P[hitter],hb)/4.5,0.3,1.3)});
           P[hitter]={...hb};
         }
+        if(!nh){
+          const ob=players.find(q=>q.p===other).base;
+          movers.push({p:other,from:{...P[other]},to:{...ob},t0:contact+sh.dur*0.5,t1:contact+sh.dur*0.5+clamp(dist2(P[other],ob)/5,0.3,1.2)});
+          P[other]={...ob};
+        }
       }
-      t=contact+sh.dur+(feed==="multi"?0.35:0.3);
-      segs.push([seg0,t,i]);
+      prevFlight={t0:contact,t1:contact+sh.dur,to:{...st.to},idx:i};
+      lastContact=contact;
+      tEnd=Math.max(tEnd, contact+sh.dur+0.3);
+      segs.push([seg0, contact+sh.dur, i]);
     });
-    return { movers, flights, poses, fx, segs, total:t };
+    return { movers, flights, poses, fx, segs, total:tEnd };
   }
 
   function evalAt(t){
@@ -494,6 +526,24 @@ export function mountProCourt(container, opts){
       hint("Feeder placed. He'll feed every shuttle from there.");
       afterStepsChange(); return;
     }
+    // set-start tool: starting positions, NOT steps — nothing plays
+    if(ssOn){
+      const P=curPositions();
+      if(!ssSel){
+        let best=null,bd=1e9;
+        players.forEach(pl=>{ const q=P[pl.p], d=(q.x-c.x)*(q.x-c.x)+(q.y-c.y)*(q.y-c.y); if(d<bd){bd=d;best=pl.p;} });
+        ssSel=best;
+        hint("Now tap where "+ssSel+" should START.");
+        return;
+      }
+      if(ssSel==="C") meta.feeder={x:+c.x.toFixed(2), y:+c.y.toFixed(2)};
+      else meta.bases[ssSel]={x:+c.x.toFixed(2), y:+c.y.toFixed(2)};
+      players=buildPlayers();
+      const who=ssSel; ssSel=null; ssOn=false; gid("ss").classList.remove("on");
+      afterStepsChange();
+      hint(who+" starts there now. Set another, or build shots.");
+      return;
+    }
     // move tool: pick a player, then a destination
     if(mvOn){
       if(!mvSel){
@@ -506,8 +556,8 @@ export function mountProCourt(container, opts){
       }
       steps.push({ rec:true, p:mvSel, to:{x:+c.x.toFixed(2), y:+c.y.toFixed(2)} });
       const done=mvSel; mvSel=null; mvOn=false; gid("mv").classList.remove("on");
-      afterStepsChange(); previewSeg(steps.length-1);
-      hint(done+" movement added.");
+      afterStepsChange();
+      hint(done+" will make that move during the rally. ▶ Play to watch.");
       return;
     }
     const sh=SHOTS[curShot()];
@@ -525,10 +575,8 @@ export function mountProCourt(container, opts){
     const st={ shot:curShot(), color:drawColor, from:pend.from, to:{x:+c.x.toFixed(2), y:+c.y.toFixed(2)}, hitter:pend.hitter, note:"" };
     st.out = !sh.serve && !inSingles(st.to.x, st.to.y);
     steps.push(st); pend=null;
-    const ni=steps.length-1;
     afterStepsChange();
     hint("Added. Next shot, Move a player, or ▶ Play.");
-    previewSeg(ni);
   }
   function afterStepsChange(){
     tl=compile(); pend=null; activeIdx=-1; stop();
@@ -588,15 +636,17 @@ export function mountProCourt(container, opts){
       gid("pal").appendChild(b);
     });
     gid("shot").onchange=()=>{ pend=null; renderStatic(); hint(SHOTS[curShot()].serve?"Serve: tap where the server stands — the legal box will light up.":"Tap where the shot is hit from."); };
-    gid("mv").onclick=function(){ mvOn=!mvOn; mvSel=null; fdOn=false; const f=gid("fd"); if(f) f.classList.remove("on"); this.classList.toggle("on",mvOn); pend=null; renderStatic(); hint(mvOn?"Move: tap a player to pick them up.":"Move cancelled."); };
+    gid("ss").onclick=function(){ ssOn=!ssOn; ssSel=null; mvOn=false; mvSel=null; fdOn=false; gid("mv").classList.remove("on"); const f0=gid("fd"); if(f0) f0.classList.remove("on"); this.classList.toggle("on",ssOn); pend=null; renderStatic(); hint(ssOn?"Set start: tap a player, then tap where they should start. (Positions only — nothing plays.)":"Set start cancelled."); };
+    gid("mv").onclick=function(){ mvOn=!mvOn; mvSel=null; ssOn=false; ssSel=null; fdOn=false; gid("ss").classList.remove("on"); const f=gid("fd"); if(f) f.classList.remove("on"); this.classList.toggle("on",mvOn); pend=null; renderStatic(); hint(mvOn?"Move: tap a player to pick them up.":"Move cancelled."); };
     const fd=gid("fd");
-    if(fd) fd.onclick=function(){ fdOn=!fdOn; mvOn=false; mvSel=null; gid("mv").classList.remove("on"); this.classList.toggle("on",fdOn); pend=null; renderStatic(); hint(fdOn?"Tap anywhere on the court to place the feeder.":"Feeder placement cancelled."); };
+    if(fd) fd.onclick=function(){ fdOn=!fdOn; mvOn=false; mvSel=null; ssOn=false; ssSel=null; gid("mv").classList.remove("on"); gid("ss").classList.remove("on"); this.classList.toggle("on",fdOn); pend=null; renderStatic(); hint(fdOn?"Tap anywhere on the court to place the feeder.":"Feeder placement cancelled."); };
     gid("rec").onclick=()=>{
       let p="A1";
       for(let i=steps.length-1;i>=0;i--){ if(!steps[i].rec){ p = steps[i].hitter || (feed==="multi" ? "A1" : (steps[i].from.y<CT.NET?"A1":"B1")); break; } }
       const pl=players.find(q=>q.p===p); if(!pl) return;
       steps.push({ rec:true, p, to:{...pl.base} });
-      afterStepsChange(); previewSeg(steps.length-1);
+      afterStepsChange();
+      hint(p+" will recover to base during the rally.");
     };
     gid("undo").onclick=()=>{ steps.pop(); afterStepsChange(); };
     gid("clr").onclick=()=>{ steps=[]; afterStepsChange(); };
@@ -619,7 +669,7 @@ export function mountProCourt(container, opts){
   renderStatic(); renderDynamic(tl.total||0); paintList();
 
   return {
-    getPoints: ()=> JSON.parse(JSON.stringify({ steps, feeder:meta.feeder, nA:meta.nA, nB:meta.nB })),
+    getPoints: ()=> JSON.parse(JSON.stringify({ steps, feeder:meta.feeder, nA:meta.nA, nB:meta.nB, bases:meta.bases })),
     hasShots: ()=> steps.some(s=>!s.rec),
     getView: ()=> "broadcast",
     destroy: ()=> stop()
