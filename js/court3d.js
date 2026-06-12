@@ -102,7 +102,7 @@ export function mountProCourt(container, opts){
   const gid = s => container.querySelector("#"+uid+s);
 
   // ---- saved data (legacy array OR {steps, feeder, nA, nB}) ----
-  let meta = { nA:1, nB:1, feeder:{x:3.05,y:7.6}, bases:{} };
+  let meta = { nA:1, nB:1, feeder:{x:3.05,y:7.6}, bases:{}, rate:"normal" };
   let steps = [];
   if(Array.isArray(opts.points)) steps = JSON.parse(JSON.stringify(opts.points));
   else if(opts.points && typeof opts.points==="object"){
@@ -110,7 +110,9 @@ export function mountProCourt(container, opts){
     meta.nA = clamp(opts.points.nA||1,1,4); meta.nB = clamp(opts.points.nB||1,1,4);
     if(opts.points.feeder) meta.feeder = { x:opts.points.feeder.x, y:opts.points.feeder.y };
     if(opts.points.bases) meta.bases = JSON.parse(JSON.stringify(opts.points.bases));
+    if(opts.points.rate) meta.rate = opts.points.rate;
   }
+  const FEEDRATE = { fast:{gap:0.35,fd:0.45}, normal:{gap:0.9,fd:0.6}, slow:{gap:1.6,fd:0.78} };
   steps.forEach(s=>{ if(s.p==="A")s.p="A1"; if(s.p==="B")s.p="B1"; if(s.hitter==="A")s.hitter="A1"; if(s.hitter==="B")s.hitter="B1"; });
 
   function spread(n){ return n===1?[3.05]: n===2?[1.8,4.3]: n===3?[1.2,3.05,4.9]:[0.9,2.5,3.6,5.2]; }
@@ -166,7 +168,7 @@ export function mountProCourt(container, opts){
       <select id="${uid}shot" style="flex:1;min-width:130px;">${SHOT_ORDER.map(k=>`<option value="${k}">${SHOTS[k].name}</option>`).join("")}</select>
       <span class="chip" id="${uid}ss">Set start</span>
       <span class="chip" id="${uid}mv">Move</span>
-      ${feed==="multi" ? `<span class="chip" id="${uid}fd">Place feeder</span>` : ``}
+      ${feed==="multi" ? `<span class="chip" id="${uid}fd">Place feeder</span><select id="${uid}rate" style="width:auto;font-size:12px;"><option value="fast">Rapid feed</option><option value="normal">Steady feed</option><option value="slow">Relaxed feed</option></select>` : ``}
       <button class="btn" id="${uid}rec" style="padding:7px 11px;font-size:12px;">Recover</button>
       <button class="btn" id="${uid}undo" style="padding:7px 11px;font-size:12px;">Undo</button>
       <button class="btn" id="${uid}clr" style="padding:7px 11px;font-size:12px;">Clear</button>
@@ -356,13 +358,16 @@ export function mountProCourt(container, opts){
       const chained = feed!=="multi" && prevFlight && dist2(prevFlight.to, st.from)<0.5;
       if(feed==="multi"){
         // reposition while the feeder reloads, then strike the feed DIRECTLY —
-        // the feed arrives exactly at the player's contact point and height
-        const tSnap=Math.max(avail[hitter], prevFlight?prevFlight.t1+0.05:0.1);
+        // the feed arrives exactly at the player's contact point and height.
+        // Feed rate sets the rhythm; at Rapid the previous answer can still
+        // be airborne when the next feed launches (real multi-shuttle).
+        const rt=FEEDRATE[meta.rate]||FEEDRATE.normal;
+        const tSnap=Math.max(avail[hitter], lastContact?lastContact+rt.gap:0.1);
         const gd=clamp(dist2(P[hitter],st.from)/6,0.05,0.4);
         movers.push({p:hitter,from:{...P[hitter]},to:{...st.from},t0:tSnap,t1:tSnap+gd});
         P[hitter]={...st.from};
-        const tFeed=tSnap+gd+0.15;
-        contact=tFeed+0.6; seg0=tSnap;
+        const tFeed=tSnap+gd+0.12;
+        contact=tFeed+rt.fd; seg0=tSnap;
         flights.push({t0:tFeed,t1:contact,tr:clearNet({x1:meta.feeder.x,y1:meta.feeder.y,x2:st.from.x,y2:st.from.y,z0:1.15,z1:sh.z0,h:0.9}),feed:true,idx:i});
         poses.push({p:"C",pose:"serve",t0:tFeed-0.12,t1:tFeed+0.3});
         poses.push({p:hitter,pose:sh.pose,t0:contact-0.25,t1:contact+0.2});
@@ -392,7 +397,7 @@ export function mountProCourt(container, opts){
       const z1 = willChain ? (SHOTS[nh.shot]||SHOTS.clear).z0 : 0;
       flights.push({t0:contact,t1:contact+sh.dur,tr:clearNet({x1:st.from.x,y1:st.from.y,x2:st.to.x,y2:st.to.y,z0:sh.z0,z1,h:sh.h}),idx:i,color:st.color});
       fx.push({kind:"hit",t:contact,x:st.from.x,y:st.from.y,z:sh.z0});
-      if(!willChain) fx.push({kind:"land",t:contact+sh.dur,x:st.to.x,y:st.to.y,out:st.out});
+      if(!willChain && feed!=="multi") fx.push({kind:"land",t:contact+sh.dur,x:st.to.x,y:st.to.y,out:st.out});
       // automatic rally habits in pure 1v1 (with squads the coach choreographs)
       if(oneVone){
         const other = hitter==="A1"?"B1":"A1";
@@ -436,28 +441,31 @@ export function mountProCourt(container, opts){
         if(t>pe.t1) s.blend = 1-outK;
       }
     });
-    let shuttle=null;
+    const shuttles=[];
     tl.flights.forEach(fl=>{
       if(t>=fl.t0 && t<=fl.t1){
         const k=(t-fl.t0)/(fl.t1-fl.t0), fp=flightPos(fl.tr,k), pv=flightPos(fl.tr,Math.max(0,k-0.05));
-        shuttle={ ...fp, px:pv.x, py:pv.y, idx:fl.idx };
+        shuttles.push({ ...fp, px:pv.x, py:pv.y, idx:fl.idx });
       }
     });
-    return { st, shuttle };
+    return { st, shuttles };
   }
 
   function renderDynamic(t){
-    const { st, shuttle } = tl ? evalAt(t) : { st:null, shuttle:null };
+    const { st, shuttles } = tl ? evalAt(t) : { st:null, shuttles:[] };
     let far="", near="";
     players.forEach(pl=>{
       const ps = st ? st[pl.p] : { x:pl.base.x, y:pl.base.y, pose:pl.feeder?"feeder":"ready", poseFrom:"ready", blend:1, face:pl.p[0]==="B"?-1:1, zoff:0 };
       const fig=figureSVG(pl, ps);
       if(fig.far) far+=fig.svg; else near+=fig.svg;
     });
-    if(shuttle){
-      const s=shuttleSVG(shuttle.x,shuttle.y,shuttle.z,shuttle.px,shuttle.py);
-      if(shuttle.y>CT.NET) far+=s; else near+=s;
-      if(tl && shuttle.idx!==activeIdx){ activeIdx=shuttle.idx; renderStatic(); markList(activeIdx); showNote(activeIdx); }
+    (shuttles||[]).forEach(shu=>{
+      const s=shuttleSVG(shu.x,shu.y,shu.z,shu.px,shu.py);
+      if(shu.y>CT.NET) far+=s; else near+=s;
+    });
+    if(shuttles && shuttles.length){
+      const last=shuttles[shuttles.length-1];
+      if(tl && last.idx!==activeIdx){ activeIdx=last.idx; renderStatic(); markList(activeIdx); showNote(activeIdx); }
     }
     gid("far").innerHTML=far; gid("near").innerHTML=near;
     let fxs="";
@@ -554,6 +562,17 @@ export function mountProCourt(container, opts){
         hint("Now tap where "+mvSel+" should go.");
         return;
       }
+      // before any shots exist, "moving" a player just sets their lineup —
+      // it only becomes a real drill move once the rally has begun
+      if(!steps.some(s=>!s.rec)){
+        if(mvSel==="C") meta.feeder={x:+c.x.toFixed(2), y:+c.y.toFixed(2)};
+        else meta.bases[mvSel]={x:+c.x.toFixed(2), y:+c.y.toFixed(2)};
+        players=buildPlayers();
+        const who=mvSel; mvSel=null; mvOn=false; gid("mv").classList.remove("on");
+        afterStepsChange();
+        hint(who+" placed in the lineup (no shots yet). During a rally, Move becomes a real move.");
+        return;
+      }
       steps.push({ rec:true, p:mvSel, to:{x:+c.x.toFixed(2), y:+c.y.toFixed(2)} });
       const done=mvSel; mvSel=null; mvOn=false; gid("mv").classList.remove("on");
       afterStepsChange();
@@ -574,9 +593,21 @@ export function mountProCourt(container, opts){
     if(!sh.serve && feed!=="multi" && ((c.y<CT.NET)===(pend.from.y<CT.NET))){ hint("The shuttle must cross the net — tap the other side.", true); return; }
     const st={ shot:curShot(), color:drawColor, from:pend.from, to:{x:+c.x.toFixed(2), y:+c.y.toFixed(2)}, hitter:pend.hitter, note:"" };
     st.out = !sh.serve && !inSingles(st.to.x, st.to.y);
+    // reachability check: in a chained rally, can the hitter cover the ground
+    // during the incoming flight? (~6 m/s is elite court speed)
+    let warn="";
+    if(feed!=="multi" && !sh.serve && pend.hitter){
+      let prev=null; for(let i2=steps.length-1;i2>=0;i2--){ if(!steps[i2].rec){ prev=steps[i2]; break; } }
+      if(prev && dist2(prev.to, st.from)<0.5){
+        const Pnow=curPositions();
+        const q=Pnow[pend.hitter];
+        const v = q ? dist2(q, st.from)/Math.max(0.25,(SHOTS[prev.shot]||SHOTS.clear).dur) : 0;
+        if(v>6) warn=" ⚠ "+pend.hitter+" would need ~"+Math.round(v)+" m/s to get there in time — probably unreachable.";
+      }
+    }
     steps.push(st); pend=null;
     afterStepsChange();
-    hint("Added. Next shot, Move a player, or ▶ Play.");
+    hint("Added. Next shot, Move a player, or ▶ Play."+warn, !!warn);
   }
   function afterStepsChange(){
     tl=compile(); pend=null; activeIdx=-1; stop();
@@ -640,6 +671,8 @@ export function mountProCourt(container, opts){
     gid("mv").onclick=function(){ mvOn=!mvOn; mvSel=null; ssOn=false; ssSel=null; fdOn=false; gid("ss").classList.remove("on"); const f=gid("fd"); if(f) f.classList.remove("on"); this.classList.toggle("on",mvOn); pend=null; renderStatic(); hint(mvOn?"Move: tap a player to pick them up.":"Move cancelled."); };
     const fd=gid("fd");
     if(fd) fd.onclick=function(){ fdOn=!fdOn; mvOn=false; mvSel=null; ssOn=false; ssSel=null; gid("mv").classList.remove("on"); gid("ss").classList.remove("on"); this.classList.toggle("on",fdOn); pend=null; renderStatic(); hint(fdOn?"Tap anywhere on the court to place the feeder.":"Feeder placement cancelled."); };
+    const rate=gid("rate");
+    if(rate){ rate.value=meta.rate; rate.onchange=()=>{ meta.rate=rate.value; afterStepsChange(); hint("Feed rhythm: "+rate.options[rate.selectedIndex].text+"."); }; }
     gid("rec").onclick=()=>{
       let p="A1";
       for(let i=steps.length-1;i>=0;i--){ if(!steps[i].rec){ p = steps[i].hitter || (feed==="multi" ? "A1" : (steps[i].from.y<CT.NET?"A1":"B1")); break; } }
@@ -669,7 +702,7 @@ export function mountProCourt(container, opts){
   renderStatic(); renderDynamic(tl.total||0); paintList();
 
   return {
-    getPoints: ()=> JSON.parse(JSON.stringify({ steps, feeder:meta.feeder, nA:meta.nA, nB:meta.nB, bases:meta.bases })),
+    getPoints: ()=> JSON.parse(JSON.stringify({ steps, feeder:meta.feeder, nA:meta.nA, nB:meta.nB, bases:meta.bases, rate:meta.rate })),
     hasShots: ()=> steps.some(s=>!s.rec),
     getView: ()=> "broadcast",
     destroy: ()=> stop()
