@@ -20,7 +20,7 @@ const LAB_VIEWS = [["bird","Bird's-eye"],["side","Side view"],["front","Front vi
 const LAB_MODES = [["drill","Drills"],["multi","Multi-shuttle"]];
 const labLabel = c => {
   const f=(arr,k)=>{ const x=arr.find(a=>a[0]===k); return x?x[1]:k; };
-  if(c.kind==="pro3d") return (c.category==="doubles"?"Doubles":"Singles")+" · Pro 3D · "+f(LAB_MODES,c.mode||"drill");
+  if(c.kind==="pro3d") return (c.category==="mixed"?"Mixed doubles":c.category==="doubles"?"Doubles":"Singles")+" · Pro 3D · "+f(LAB_MODES,c.mode||"drill");
   return f(LAB_CATS,c.category)+" · "+f(LAB_VIEWS,c.view||"bird")+" · "+f(LAB_MODES,c.mode||"drill");
 };
 const playersList = ()=> state.roster.filter(u=>u.role==="player");
@@ -92,10 +92,8 @@ export function renderLibrary(){
         <div class="disp" style="font-size:18px;margin-bottom:4px;">Court Lab</div>
         <div class="muted" style="font-size:13px;line-height:1.5;">A true-scale badminton court — official lines, real serve boxes, players that rotate like a real pair. Pick the game, the camera, and the training mode.</div>
         ${row("1 · DISCIPLINE", LAB_CATS, "category")}
-        ${lab.category!=="mixed"
-          ? `<div class="muted" style="font-size:12px;margin:12px 0 0;line-height:1.6;">🎥 ${lab.category==="doubles"?"Doubles":"Singles"} uses the <b style="color:var(--brand)">Pro 3D court</b> — Broadcast, Corner, Side and Bird's-eye cameras built in${lab.category==="doubles"?", with real pair rotation (front-and-back ↔ side-by-side)":""}. Switch angles any time, even mid-replay.</div>`
-          : row("2 · COURT VIEW", LAB_VIEWS, "view")}
-        ${row(lab.category!=="mixed" ? "2 · TRAINING MODE" : "3 · TRAINING MODE", LAB_MODES, "feed")}
+        <div class="muted" style="font-size:12px;margin:12px 0 0;line-height:1.6;">🎥 The <b style="color:var(--brand)">Pro 3D court</b> — Broadcast, Corner, Side and Bird's-eye cameras built in, switchable even mid-replay.${lab.category==="doubles"?" Real pair rotation: front-and-back ↔ side-by-side.":""}${lab.category==="mixed"?" Mixed rotation: the woman holds the front, the man covers the rear in attack.":""}</div>
+        ${row("2 · TRAINING MODE", LAB_MODES, "feed")}
         <div class="muted" style="font-size:12px;margin-top:10px;line-height:1.5;">${lab.feed==="multi" ? "Multi-shuttle: a feeder throws shuttle after shuttle — you place each feed and the player's answer." : "Drills: build a rally shot by shot — players move and recover automatically."}</div>
         <button class="btn pri" id="labStart" style="width:100%;margin-top:14px;">Start building →</button>
         <div style="border-top:1px solid var(--line);margin-top:16px;padding-top:12px;">
@@ -109,7 +107,7 @@ export function renderLibrary(){
     view.querySelectorAll("[data-lab]").forEach(el=>el.onclick=()=>{
       const [k,v]=el.dataset.lab.split(":"); screen.lab[k]=v; draw();
     });
-    document.getElementById("labStart").onclick = ()=>openBuild(screen.lab.category!=="mixed" ? "pro3d" : "lab", null, { ...screen.lab });
+    document.getElementById("labStart").onclick = ()=>openBuild("pro3d", null, { ...screen.lab });
     view.querySelectorAll("[data-pick]").forEach(el=>el.onclick=()=>openBuild(el.dataset.pick, null));
   };
 
