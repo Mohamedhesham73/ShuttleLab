@@ -24,11 +24,13 @@ service cloud.firestore {
     match /goals/{id}        { allow read, write: if signedIn(); }
     match /drills/{id}       { allow read, write: if signedIn(); }
 
-    // Videos: only coaches create/delete/edit content.
-    // Players may update ONLY the watchedBy map (watched/done tracking).
+    // Videos. Any signed-in member may CREATE a video (coach adds match film;
+    // players upload their own clips for analysis via "My Videos"). Only the
+    // coach may edit content or delete. Players may update ONLY the watchedBy
+    // map (watched/done tracking).
     match /videos/{id} {
       allow read:   if signedIn();
-      allow create: if isCoach();
+      allow create: if signedIn();
       allow delete: if isCoach();
       allow update: if isCoach()
         || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['watchedBy']);

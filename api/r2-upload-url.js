@@ -3,13 +3,15 @@
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { r2, BUCKET, PUBLIC_BASE } from "./_lib/r2.js";
-import { verifyAuth, isCoach } from "./_lib/firebaseAdmin.js";
+import { verifyAuth } from "./_lib/firebaseAdmin.js";
 
 export default async function handler(req, res){
   if(req.method !== "POST"){ res.status(405).json({ error: "Method not allowed" }); return; }
   try{
-    const decoded = await verifyAuth(req);
-    if(!isCoach(decoded)){ res.status(403).json({ error: "Coaches only" }); return; }
+    // Any signed-in team member may upload: coaches add match film, and players
+    // upload their own clips for analysis ("My Videos"). Firestore rules still
+    // control who can edit/assign the resulting video docs.
+    await verifyAuth(req);
 
     const { key, contentType, size } = req.body || {};
     if(!key || !/^videos\/[A-Za-z0-9._-]+$/.test(key)){ res.status(400).json({ error: "Bad key" }); return; }

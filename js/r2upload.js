@@ -57,7 +57,7 @@ export async function uploadToR2(file, { onProgress } = {}){
   });
   if(!r.ok){
     const t = await r.text().catch(()=> "");
-    if(r.status === 403) throw new Error("Only coaches can upload videos.");
+    if(r.status === 403) throw new Error("You don't have permission to upload.");
     throw new Error("Couldn't start upload (" + r.status + "). " + t);
   }
   const { uploadUrl, key: outKey, publicUrl } = await r.json();

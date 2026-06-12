@@ -45,26 +45,39 @@ function ytLoad(cb){
   document.head.appendChild(s);
 }
 
-export function renderMatches(){
+export function renderMatches(opts){
+  opts = opts || {};
+  const myUploads = opts.mode === "myuploads";   // player's own "My Videos" page
   const view = document.getElementById("view");
   const coach = state.role === "coach";
+  const canPost = coach || myUploads;            // who sees the upload form
   let videos = [];
   let current = null;   // open video docId (so live updates don't clobber the editor)
 
   // ---------- LIST SCREEN ----------
   function renderList(){
-    const mine = coach ? videos : videos.filter(v =>
-      v.assignedTo === "team" ||
-      (Array.isArray(v.assignedTo) && v.assignedTo.map(String).includes(String(state.user.id)))
-    );
+    let mine;
+    if(myUploads){
+      // My Videos: only the clips this player uploaded.
+      mine = videos.filter(v => String(v.submittedBy) === String(state.user.id));
+    } else if(coach){
+      mine = videos;
+    } else {
+      mine = videos.filter(v =>
+        v.assignedTo === "team" ||
+        (Array.isArray(v.assignedTo) && v.assignedTo.map(String).includes(String(state.user.id)))
+      );
+    }
 
     view.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
-        <div class="logo-txt" style="font-size:20px;">Film room</div>
-        ${coach ? `<button class="btn pri" id="addVidBtn">+ Add video</button>` : ``}
+        <div class="logo-txt" style="font-size:20px;">${myUploads ? "My Videos" : "Film room"}</div>
+        ${canPost ? `<button class="btn pri" id="addVidBtn">+ Add video</button>` : ``}
       </div>
 
-      ${coach ? `<div id="vidForm" class="card" style="padding:16px;margin-bottom:16px;display:none;">
+      ${myUploads ? `<div class="muted" style="font-size:13px;margin-bottom:14px;">Upload your match or training clips here. Your coach will analyse them and add notes you can watch back.</div>` : ``}
+
+      ${canPost ? `<div id="vidForm" class="card" style="padding:16px;margin-bottom:16px;display:none;">
         <div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
           <input id="vTitle" placeholder="Title (e.g. Quarterfinal vs. Hassan — game 2)" style="flex:2;min-width:170px;">
           <select id="vType" style="flex:1;min-width:130px;">${TYPES.map(t=>`<option>${t}</option>`).join("")}</select>
@@ -91,19 +104,25 @@ export function renderMatches(){
             </div>
             <div style="padding:13px 15px;">
               <div class="disp" style="font-size:16px;margin-bottom:4px;">${esc(v.title||"Untitled")}</div>
-              <div class="muted" style="font-size:12px;">${assignLabel(v)}</div>
+              <div class="muted" style="font-size:12px;">${myUploads ? myStatus(v) : assignLabel(v)}</div>
+              ${coach && v.submittedBy ? `<div class="muted" style="font-size:12px;margin-top:3px;color:var(--brand);">📤 Submitted by ${esc(submitterName(v))}</div>` : ""}
               ${coach && audienceIds(v).length ? `<div class="muted" style="font-size:12px;margin-top:3px;">Seen by ${seenCount(v)}/${audienceIds(v).length}</div>` : ""}
             </div>
           </div>`).join("")
-          : `<div class="muted">${coach ? "No videos yet — add the first one." : "Your coach hasn't shared any videos yet."}</div>`}
+          : `<div class="muted">${myUploads ? "You haven't uploaded any clips yet — tap “+ Add video” to send your first one to the coach." : (coach ? "No videos yet — add the first one." : "Your coach hasn't shared any videos yet.")}</div>`}
       </div>`;
 
     view.querySelectorAll("[data-open]").forEach(el=>{
       el.onclick = ()=>{ const v = videos.find(x=>x.docId===el.dataset.open); if(v) openVideo(v); };
     });
 
-    if(coach){
+    if(canPost){
       const form = document.getElementById("vidForm");
+      // A player's "My Videos" upload is tagged with submittedBy and auto-shared
+      // back to themselves so the coach can find it and they can watch the notes.
+      const ownerFields = myUploads
+        ? { submittedBy: String(state.user.id), assignedTo: [String(state.user.id)] }
+        : { assignedTo: [] };
       document.getElementById("addVidBtn").onclick = ()=>{ form.style.display = form.style.display==="none" ? "block" : "none"; };
       document.getElementById("vSave").onclick = async ()=>{
         const title = document.getElementById("vTitle").value.trim();
@@ -115,12 +134,12 @@ export function renderMatches(){
         try{
           const ref = await addVideo({
             title, type: document.getElementById("vType").value,
-            source: src, markers: [], assignedTo: [],
+            source: src, markers: [], ...ownerFields,
             createdBy: String(state.user.id), ts: Date.now()
           });
           form.style.display = "none";
-          // open it straight away to start adding notes
-          openVideo({ docId: ref.id, title, type: document.getElementById("vType").value, source: src, markers: [], assignedTo: [] });
+          // open it straight away (coach: to add notes; player: to confirm upload)
+          openVideo({ docId: ref.id, title, type: document.getElementById("vType").value, source: src, markers: [], ...ownerFields });
         }catch(e){ errEl.textContent = "Couldn't save: " + (e.message||e); }
       };
 
@@ -136,9 +155,9 @@ export function renderMatches(){
           const { key, url, hash, deduped } = await uploadToR2(f, { onProgress: p => { prog.textContent = "Uploading… " + Math.round(p*100) + "%"; } });
           prog.textContent = deduped ? "Already uploaded — linking…" : "Finishing…";
           const src = { kind: "r2", key, url: url || null };
-          const ref = await addVideo({ title, type, source: src, contentHash: hash, markers: [], assignedTo: [], createdBy: String(state.user.id), ts: Date.now() });
+          const ref = await addVideo({ title, type, source: src, contentHash: hash, markers: [], ...ownerFields, createdBy: String(state.user.id), ts: Date.now() });
           form.style.display = "none"; prog.style.display = "none"; this.value = "";
-          openVideo({ docId: ref.id, title, type, source: src, markers: [], assignedTo: [] });
+          openVideo({ docId: ref.id, title, type, source: src, markers: [], ...ownerFields });
         }catch(e){
           prog.style.display = "none";
           errEl.textContent = "Upload failed: " + (e.message||e);
@@ -154,6 +173,16 @@ export function renderMatches(){
       return "Sent to " + names.join(", ");
     }
     return coach ? "Not sent yet" : "";
+  }
+
+  // ---- My Videos helpers ----
+  function submitterName(v){
+    const u = state.roster.find(x=>String(x.id)===String(v.submittedBy));
+    return u ? u.name : "a player";
+  }
+  function myStatus(v){
+    const n = (v.markers && v.markers.length) || 0;
+    return n ? ("Coach added " + n + " coaching point" + (n>1?"s":"")) : "Awaiting coach analysis";
   }
 
   // ---- watched / done tracking helpers ----
@@ -511,3 +540,7 @@ export function renderMatches(){
     if(!current) renderList();   // don't clobber an open editor
   }));
 }
+
+// Player's "My Videos" page — same film-room, but lists only their own uploads
+// and lets them upload new clips for the coach to analyse.
+export function renderMyVideos(){ return renderMatches({ mode: "myuploads" }); }

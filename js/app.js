@@ -8,7 +8,7 @@ import { renderTeam } from "./views/team.js";
 import { renderLog } from "./views/log.js";
 import { renderTraining } from "./views/training.js";
 import { renderLibrary } from "./views/library.js";
-import { renderMatches } from "./views/matches.js";
+import { renderMatches, renderMyVideos } from "./views/matches.js";
 import { renderLeaderboard } from "./views/leaderboard.js";
 
 const VIEWS = {
@@ -18,6 +18,7 @@ const VIEWS = {
   train: renderTraining,
   library: renderLibrary,
   matches: renderMatches,
+  myvids: renderMyVideos,
   board: renderLeaderboard
 };
 
