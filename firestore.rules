@@ -23,6 +23,8 @@ service cloud.firestore {
     match /measurements/{id} { allow read, write: if signedIn(); }
     match /goals/{id}        { allow read, write: if signedIn(); }
     match /drills/{id}       { allow read, write: if signedIn(); }
+    match /training/{id}     { allow read, write: if signedIn(); }
+    match /plans/{id}        { allow read, write: if signedIn(); }
 
     // Videos. Any signed-in member may CREATE a video (coach adds match film;
     // players upload their own clips for analysis via "My Videos"). Only the
