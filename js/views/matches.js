@@ -293,6 +293,10 @@ export function renderMatches(opts){
         <div id="flmAssign" style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px;"></div>
         <button class="btn pri" id="flmSaveBtn">Save & send</button>
         <span id="flmSaveMsg" class="muted" style="margin-left:10px;font-size:13px;"></span>
+        <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px;">
+          <button class="btn" id="flmDelVid" style="color:var(--down);border-color:var(--down);">🗑 Delete video</button>
+          <span class="muted" style="margin-left:8px;font-size:12px;">Removes it for everyone.</span>
+        </div>
       </div>
       ${seenPanelHTML(work)}` : ``}
     `;
@@ -456,6 +460,18 @@ export function renderMatches(opts){
           msg.textContent = assignedTo==="team" ? "Saved & shared with the team." :
             (assignedTo.length ? "Saved & sent." : "Saved. (Not sent to anyone yet.)");
         }catch(e){ msg.style.color="var(--down)"; msg.textContent="Couldn't save: "+(e.message||e); }
+      };
+
+      document.getElementById("flmDelVid").onclick=async ()=>{
+        if(!confirm("Delete “"+(work.title||"this video")+"”? This removes it for everyone and can't be undone.")) return;
+        const btn=document.getElementById("flmDelVid"); btn.disabled=true; btn.textContent="Deleting…";
+        try{
+          await deleteVideo(work.docId);
+          stopLoop(); current=null; renderList();
+        }catch(e){
+          btn.disabled=false; btn.textContent="🗑 Delete video";
+          const msg=document.getElementById("flmSaveMsg"); msg.style.color="var(--down)"; msg.textContent="Couldn't delete: "+(e.message||e);
+        }
       };
     }
 
