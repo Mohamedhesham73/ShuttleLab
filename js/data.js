@@ -1,5 +1,5 @@
 import { db, storage, auth } from "./firebase.js";
-import { collection, addDoc, doc, setDoc, deleteDoc, onSnapshot, query, where, getDocs }
+import { collection, addDoc, doc, setDoc, deleteDoc, onSnapshot, query, where, getDocs, getDoc }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { ref, uploadBytesResumable, getDownloadURL }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
@@ -33,6 +33,18 @@ export function listenTraining(uid, cb){
     err=>cb(null, err));
 }
 export function postTraining(data){ return addDoc(collection(db,"training"), data); }
+
+// ---- Season plan (one doc per player): { target, blocks[], tournaments[] } ----
+export function listenPlan(uid, cb){
+  return onSnapshot(doc(db,"plans",String(uid)),
+    d=>cb(d.exists()? d.data() : {}),
+    err=>cb(null, err));
+}
+export async function getPlan(uid){
+  const d = await getDoc(doc(db,"plans",String(uid)));
+  return d.exists()? d.data() : {};
+}
+export function savePlan(uid, data){ return setDoc(doc(db,"plans",String(uid)), data, { merge:true }); }
 
 // ---- Drill / shot library ----
 export function listenDrills(cb){

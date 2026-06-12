@@ -1,51 +1,262 @@
 import { state, esc, fmtDate } from "../core.js";
-import { listenTraining, postTraining } from "../data.js";
+import { TOURNAMENTS } from "../config.js";
+import { listenTraining, postTraining, listenPlan, getPlan, savePlan } from "../data.js";
+
+// ---- date helpers ----
+function d(iso){ try{ return new Date(iso+"T00:00:00"); }catch(e){ return null; } }
+function fmtRange(a,b){
+  const A=d(a), B=d(b||a); if(!A) return "";
+  const mo=x=>x.toLocaleDateString(undefined,{month:"short"});
+  if(!b || a===b) return A.getDate()+" "+mo(A)+" "+A.getFullYear();
+  const sameMonth = A.getMonth()===B.getMonth() && A.getFullYear()===B.getFullYear();
+  return sameMonth
+    ? A.getDate()+"–"+B.getDate()+" "+mo(B)+" "+B.getFullYear()
+    : A.getDate()+" "+mo(A)+" – "+B.getDate()+" "+mo(B)+" "+B.getFullYear();
+}
+function daysUntil(iso){ const t=new Date(); t.setHours(0,0,0,0); const x=d(iso); if(!x) return 9999; return Math.round((x-t)/86400000); }
+function whenLabel(t){
+  const ds=daysUntil(t.start), de=daysUntil(t.end||t.start);
+  if(de<0) return { txt:"Finished", col:"var(--muted)" };
+  if(ds<=0 && de>=0) return { txt:"Happening now", col:"var(--up)" };
+  if(ds===0) return { txt:"Today", col:"var(--brand)" };
+  if(ds<=14) return { txt:"In "+ds+" day"+(ds>1?"s":""), col:"var(--brand)" };
+  return { txt:"In "+ds+" days", col:"var(--muted)" };
+}
+// soonest not-yet-finished tournament id (for the "next up" highlight)
+function nextId(list){
+  let best=null;
+  list.forEach(t=>{ if(daysUntil(t.end||t.start)>=0){ if(!best || daysUntil(t.start)<daysUntil(best.start)) best=t; } });
+  return best ? best.id : null;
+}
 
 export function renderTraining(){
   const view = document.getElementById("view");
   const coach = state.role==="coach";
   const roster = state.roster.filter(u=>u.role!=="coach");
-  let listUnsub = null;
+  let msgUnsub = null;   // live messages listener (re-pointed when coach switches player)
+
+  // ============================ PLAYER VIEW ============================
+  if(!coach){
+    view.innerHTML = `
+      <div class="muted" style="font-size:14px;margin-bottom:14px;">Your season plan · written for you by your coach</div>
+      <div id="planView"><div class="muted">Loading…</div></div>
+      <div style="margin-top:18px;">
+        <div class="muted" style="font-size:12px;margin-bottom:6px;">Messages from your coach</div>
+        <div id="msgList"><div class="muted">Loading…</div></div>
+      </div>`;
+
+    state.unsub.push(listenPlan(String(state.user.id), (plan, err)=>{
+      const el=document.getElementById("planView"); if(!el) return;
+      if(err){ el.innerHTML=`<div class="err">${esc(err.message)}</div>`; return; }
+      el.innerHTML = planReadHTML(plan||{});
+    }));
+    startMessages(String(state.user.id));
+    return;
+  }
+
+  // ============================ COACH VIEW ============================
+  let curUid = roster[0] ? String(roster[0].id) : null;
+  let plan = { target:"", blocks:[], tournaments:[] };
 
   view.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
-      <span class="muted" style="font-size:14px;">Training plan ${coach?"":"· written for you by your coach"}</span>
-      ${coach?`<select id="trainSel" style="width:auto;">${roster.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join("")}</select>`:""}
+      <span class="muted" style="font-size:14px;">Season plan</span>
+      ${roster.length?`<select id="trainSel" style="width:auto;">${roster.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join("")}</select>`:""}
     </div>
-    ${coach?`<div class="card" style="padding:16px;margin-bottom:14px;">
-      <textarea id="trainText" rows="3" placeholder="Write this player's training…" style="margin-bottom:10px;resize:vertical;"></textarea>
-      <button class="btn pri" id="postTrain">Post to player</button><div id="trainErr" class="err"></div>
-    </div>`:""}
-    <div id="trainList"><div class="muted">Loading…</div></div>`;
+    <div id="planEdit"><div class="muted">Loading…</div></div>
+    <div class="card" style="padding:16px;margin-top:16px;">
+      <div class="disp" style="font-size:15px;margin-bottom:10px;">Message the player</div>
+      <textarea id="msgText" rows="2" placeholder="A quick note for this player…" style="margin-bottom:10px;resize:vertical;"></textarea>
+      <button class="btn pri" id="msgPost">Post</button><div id="msgErr" class="err"></div>
+      <div id="msgList" style="margin-top:12px;"></div>
+    </div>`;
 
-  const startList = (uid)=>{
-    if(listUnsub){ try{ listUnsub(); }catch(e){} }
-    listUnsub = listenTraining(uid, (items, err)=>{
-      const el = document.getElementById("trainList"); if(!el) return;
-      if(err){ el.innerHTML = `<div class="err">${esc(err.message)}</div>`; return; }
-      el.innerHTML = items.length ? items.map(it=>`<div class="card fade" style="padding:16px;margin-bottom:10px;">
-          <div class="muted" style="font-size:12px;margin-bottom:5px;">${esc(it.byName||"Coach")} · ${fmtDate(it.dateISO)}</div>
-          <div style="font-size:14px;line-height:1.6;white-space:pre-wrap;">${esc(it.text)}</div></div>`).join("")
-        : '<div class="muted">No training posted yet.</div>';
-    });
-    state.unsub.push(()=>{ if(listUnsub){ try{ listUnsub(); }catch(e){} } });
+  if(!roster.length){ document.getElementById("planEdit").innerHTML = `<div class="muted">No players on the roster yet.</div>`; return; }
+
+  const sel = document.getElementById("trainSel");
+  sel.onchange = ()=>{ curUid = sel.value; selectPlayer(curUid); };
+
+  document.getElementById("msgPost").onclick = async ()=>{
+    const txt=document.getElementById("msgText").value.trim();
+    const errEl=document.getElementById("msgErr"); errEl.textContent="";
+    if(!txt || !curUid) return;
+    try{
+      await postTraining({ uid:String(curUid), text:txt, byName:state.name, dateISO:new Date().toISOString().slice(0,10), ts:Date.now() });
+      document.getElementById("msgText").value="";
+    }catch(e){ errEl.textContent="Couldn't post: "+(e.message||e); }
   };
 
-  if(coach){
-    const sel = document.getElementById("trainSel");
-    let target = roster[0] ? String(roster[0].id) : null;
-    if(target) startList(target);
-    sel.onchange = (e)=>{ target = e.target.value; startList(target); };
-    document.getElementById("postTrain").onclick = async ()=>{
-      const txt = document.getElementById("trainText").value.trim();
-      const errEl = document.getElementById("trainErr"); errEl.textContent = "";
-      if(!txt || !target) return;
-      try{
-        await postTraining({ uid:String(target), text:txt, byName:state.name, dateISO:new Date().toISOString().slice(0,10), ts:Date.now() });
-        document.getElementById("trainText").value = "";
-      }catch(e){ errEl.textContent = "Couldn't post: " + (e.message||e); }
-    };
-  } else {
-    startList(String(state.user.id));
+  async function selectPlayer(uid){
+    document.getElementById("planEdit").innerHTML = `<div class="muted">Loading…</div>`;
+    try{ plan = await getPlan(uid); }catch(e){ plan = {}; }
+    plan = plan || {}; plan.blocks = plan.blocks||[]; plan.tournaments = plan.tournaments||[];
+    renderEdit();
+    startMessages(uid);
   }
+
+  function syncTargetFromDOM(){ const t=document.getElementById("tgtText"); if(t) plan.target = t.value; }
+
+  function renderEdit(){
+    const el = document.getElementById("planEdit");
+    const blocks = (plan.blocks||[]).slice().sort((a,b)=>(a.start||"").localeCompare(b.start||""));
+    const picked = new Set(plan.tournaments||[]);
+
+    el.innerHTML = `
+      <!-- Season target -->
+      <div class="card" style="padding:16px;margin-bottom:14px;">
+        <div class="disp" style="font-size:15px;margin-bottom:8px;">🎯 Season target</div>
+        <textarea id="tgtText" rows="3" placeholder="e.g. Reach beep level 11 · medal at U17 singles · sharper net play" style="resize:vertical;margin-bottom:10px;">${esc(plan.target||"")}</textarea>
+        <button class="btn pri" id="tgtSave">Save target</button>
+        <span id="tgtMsg" class="muted" style="margin-left:10px;font-size:13px;"></span>
+      </div>
+
+      <!-- Plan phases -->
+      <div class="card" style="padding:16px;margin-bottom:14px;">
+        <div class="disp" style="font-size:15px;margin-bottom:10px;">🗓️ Plan phases</div>
+        <div id="blkList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">
+          ${blocks.length ? blocks.map(b=>`
+            <div style="display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:10px;padding:10px 12px;">
+              <div style="flex:1;">
+                <div class="muted" style="font-size:12px;">${esc(fmtRange(b.start,b.end))}</div>
+                <div class="disp" style="font-size:14px;">${esc(b.title||"")}</div>
+                ${b.details?`<div style="font-size:13px;line-height:1.5;white-space:pre-wrap;margin-top:3px;">${esc(b.details)}</div>`:""}
+              </div>
+              <button class="btn" data-del="${esc(b.id)}" style="padding:4px 9px;font-size:12px;color:var(--down);border-color:var(--down);">Delete</button>
+            </div>`).join("") : `<div class="muted" style="font-size:13px;">No phases yet — add one below.</div>`}
+        </div>
+        <div style="border-top:1px solid var(--line);padding-top:12px;">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+            <div style="flex:1;min-width:130px;"><label style="font-size:12px;">Start</label><input type="date" id="blkStart"></div>
+            <div style="flex:1;min-width:130px;"><label style="font-size:12px;">End</label><input type="date" id="blkEnd"></div>
+          </div>
+          <input id="blkTitle" placeholder="Focus (e.g. Base endurance block)" style="margin-bottom:8px;">
+          <textarea id="blkDetails" rows="2" placeholder="What to work on this phase…" style="resize:vertical;margin-bottom:8px;"></textarea>
+          <button class="btn" id="blkAdd">+ Add phase</button><span id="blkErr" class="err"></span>
+        </div>
+      </div>
+
+      <!-- Tournaments -->
+      <div class="card" style="padding:16px;">
+        <div class="disp" style="font-size:15px;margin-bottom:4px;">🏆 Tournaments for this player</div>
+        <div class="muted" style="font-size:12px;margin-bottom:10px;">Tap a tournament to add it to this player's calendar.</div>
+        <div style="display:flex;flex-direction:column;gap:7px;">
+          ${TOURNAMENTS.map(t=>{
+            const on = picked.has(t.id);
+            return `<div data-tg="${t.id}" style="display:flex;gap:10px;align-items:center;border:1px solid ${on?"var(--brand)":"var(--line)"};border-radius:10px;padding:9px 11px;cursor:pointer;">
+              <span style="font-size:16px;">${on?"⭐":"☆"}</span>
+              <div style="flex:1;">
+                <div class="disp" style="font-size:14px;">${esc(t.name)}</div>
+                <div class="muted" style="font-size:12px;">${esc(t.cats)} · ${esc(fmtRange(t.start,t.end))}</div>
+              </div>
+            </div>`;
+          }).join("")}
+        </div>
+      </div>`;
+
+    // target save
+    document.getElementById("tgtSave").onclick = async ()=>{
+      syncTargetFromDOM();
+      const m=document.getElementById("tgtMsg"); m.style.color="var(--muted)"; m.textContent="Saving…";
+      try{ await savePlan(curUid, { target: plan.target }); m.style.color="var(--brand)"; m.textContent="Saved."; }
+      catch(e){ m.style.color="var(--down)"; m.textContent="Couldn't save: "+(e.message||e); }
+    };
+
+    // add phase
+    document.getElementById("blkAdd").onclick = async ()=>{
+      const start=document.getElementById("blkStart").value;
+      const end=document.getElementById("blkEnd").value || start;
+      const title=document.getElementById("blkTitle").value.trim();
+      const details=document.getElementById("blkDetails").value.trim();
+      const errEl=document.getElementById("blkErr"); errEl.textContent="";
+      if(!start){ errEl.textContent=" Pick a start date."; return; }
+      if(!title){ errEl.textContent=" Give it a focus."; return; }
+      syncTargetFromDOM();
+      plan.blocks = (plan.blocks||[]).concat([{ id:Date.now(), start, end, title, details }]);
+      try{ await savePlan(curUid, { blocks: plan.blocks }); renderEdit(); }
+      catch(e){ errEl.textContent=" Couldn't save: "+(e.message||e); }
+    };
+
+    // delete phase
+    el.querySelectorAll("[data-del]").forEach(btn=>{
+      btn.onclick = async ()=>{
+        syncTargetFromDOM();
+        plan.blocks = (plan.blocks||[]).filter(b=>String(b.id)!==String(btn.dataset.del));
+        try{ await savePlan(curUid, { blocks: plan.blocks }); renderEdit(); }
+        catch(e){ /* ignore */ }
+      };
+    });
+
+    // toggle tournaments
+    el.querySelectorAll("[data-tg]").forEach(row=>{
+      row.onclick = async ()=>{
+        syncTargetFromDOM();
+        const id=row.dataset.tg;
+        const set=new Set(plan.tournaments||[]);
+        if(set.has(id)) set.delete(id); else set.add(id);
+        plan.tournaments = Array.from(set);
+        try{ await savePlan(curUid, { tournaments: plan.tournaments }); renderEdit(); }
+        catch(e){ /* ignore */ }
+      };
+    });
+  }
+
+  selectPlayer(curUid);
+
+  // ---- shared: live messages list (coach & player) ----
+  function startMessages(uid){
+    if(msgUnsub){ try{ msgUnsub(); }catch(e){} }   // detach previous player's listener
+    msgUnsub = listenTraining(uid, (items, err)=>{
+      const el=document.getElementById("msgList"); if(!el) return;
+      if(err){ el.innerHTML=`<div class="err">${esc(err.message)}</div>`; return; }
+      el.innerHTML = items.length ? items.map(it=>`
+        <div class="card fade" style="padding:12px 14px;margin-bottom:8px;">
+          <div class="muted" style="font-size:12px;margin-bottom:4px;">${esc(it.byName||"Coach")} · ${esc(fmtDate(it.dateISO))}</div>
+          <div style="font-size:14px;line-height:1.55;white-space:pre-wrap;">${esc(it.text)}</div>
+        </div>`).join("") : '<div class="muted" style="font-size:13px;">No messages yet.</div>';
+    });
+    state.unsub.push(()=>{ if(msgUnsub){ try{ msgUnsub(); }catch(e){} } });
+  }
+}
+
+// ---- player read-only render of the plan (target + phases + tournaments) ----
+function planReadHTML(plan){
+  const target = plan.target ? esc(plan.target) : "";
+  const blocks = (plan.blocks||[]).slice().sort((a,b)=>(a.start||"").localeCompare(b.start||""));
+  const myTours = TOURNAMENTS.filter(t=>(plan.tournaments||[]).includes(t.id)).slice().sort((a,b)=>a.start.localeCompare(b.start));
+  const next = nextId(myTours);
+
+  const targetCard = `<div class="card" style="padding:16px;margin-bottom:14px;border-left:3px solid var(--brand);">
+    <div class="disp" style="font-size:15px;margin-bottom:6px;">🎯 Season target</div>
+    ${target ? `<div style="font-size:15px;line-height:1.6;white-space:pre-wrap;">${target}</div>`
+             : `<div class="muted" style="font-size:13px;">Your coach hasn't set a season target yet.</div>`}
+  </div>`;
+
+  const phaseCard = `<div class="card" style="padding:16px;margin-bottom:14px;">
+    <div class="disp" style="font-size:15px;margin-bottom:10px;">🗓️ Plan phases</div>
+    ${blocks.length ? blocks.map(b=>`
+      <div style="display:flex;gap:12px;margin-bottom:10px;">
+        <div style="width:5px;border-radius:5px;background:var(--brand);flex:0 0 auto;"></div>
+        <div>
+          <div class="muted" style="font-size:12px;">${esc(fmtRange(b.start,b.end))}</div>
+          <div class="disp" style="font-size:14px;">${esc(b.title||"")}</div>
+          ${b.details?`<div style="font-size:13px;line-height:1.55;white-space:pre-wrap;margin-top:3px;">${esc(b.details)}</div>`:""}
+        </div>
+      </div>`).join("") : `<div class="muted" style="font-size:13px;">No phases set yet.</div>`}
+  </div>`;
+
+  const tourCard = `<div class="card" style="padding:16px;">
+    <div class="disp" style="font-size:15px;margin-bottom:10px;">🏆 Your tournaments</div>
+    ${myTours.length ? myTours.map(t=>{
+      const w=whenLabel(t); const isNext = t.id===next;
+      return `<div style="display:flex;gap:10px;align-items:center;border:1px solid ${isNext?"var(--brand)":"var(--line)"};border-radius:10px;padding:10px 12px;margin-bottom:8px;">
+        <div style="flex:1;">
+          <div class="disp" style="font-size:14px;">${esc(t.name)}${isNext?` <span class="chip on" style="font-size:10px;padding:1px 7px;">NEXT</span>`:""}</div>
+          <div class="muted" style="font-size:12px;">${esc(t.cats)} · ${esc(fmtRange(t.start,t.end))} · ${esc(t.place)}</div>
+        </div>
+        <div style="font-size:12px;color:${w.col};white-space:nowrap;">${esc(w.txt)}</div>
+      </div>`;
+    }).join("") : `<div class="muted" style="font-size:13px;">No tournaments added for you yet.</div>`}
+  </div>`;
+
+  return targetCard + phaseCard + tourCard;
 }
