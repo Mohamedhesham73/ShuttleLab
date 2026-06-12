@@ -20,7 +20,7 @@ const LAB_VIEWS = [["bird","Bird's-eye"],["side","Side view"],["front","Front vi
 const LAB_MODES = [["drill","Drills"],["multi","Multi-shuttle"]];
 const labLabel = c => {
   const f=(arr,k)=>{ const x=arr.find(a=>a[0]===k); return x?x[1]:k; };
-  if(c.kind==="pro3d") return "Singles · Pro 3D · "+f(LAB_MODES,c.mode||"drill");
+  if(c.kind==="pro3d") return (c.category==="doubles"?"Doubles":"Singles")+" · Pro 3D · "+f(LAB_MODES,c.mode||"drill");
   return f(LAB_CATS,c.category)+" · "+f(LAB_VIEWS,c.view||"bird")+" · "+f(LAB_MODES,c.mode||"drill");
 };
 const playersList = ()=> state.roster.filter(u=>u.role==="player");
@@ -92,10 +92,10 @@ export function renderLibrary(){
         <div class="disp" style="font-size:18px;margin-bottom:4px;">Court Lab</div>
         <div class="muted" style="font-size:13px;line-height:1.5;">A true-scale badminton court — official lines, real serve boxes, players that rotate like a real pair. Pick the game, the camera, and the training mode.</div>
         ${row("1 · DISCIPLINE", LAB_CATS, "category")}
-        ${lab.category==="singles"
-          ? `<div class="muted" style="font-size:12px;margin:12px 0 0;line-height:1.6;">🎥 Singles uses the new <b style="color:var(--brand)">Pro 3D court</b> — Broadcast, Corner, Side and Bird's-eye cameras are built in. Switch angles any time, even mid-replay.</div>`
+        ${lab.category!=="mixed"
+          ? `<div class="muted" style="font-size:12px;margin:12px 0 0;line-height:1.6;">🎥 ${lab.category==="doubles"?"Doubles":"Singles"} uses the <b style="color:var(--brand)">Pro 3D court</b> — Broadcast, Corner, Side and Bird's-eye cameras built in${lab.category==="doubles"?", with real pair rotation (front-and-back ↔ side-by-side)":""}. Switch angles any time, even mid-replay.</div>`
           : row("2 · COURT VIEW", LAB_VIEWS, "view")}
-        ${row(lab.category==="singles" ? "2 · TRAINING MODE" : "3 · TRAINING MODE", LAB_MODES, "feed")}
+        ${row(lab.category!=="mixed" ? "2 · TRAINING MODE" : "3 · TRAINING MODE", LAB_MODES, "feed")}
         <div class="muted" style="font-size:12px;margin-top:10px;line-height:1.5;">${lab.feed==="multi" ? "Multi-shuttle: a feeder throws shuttle after shuttle — you place each feed and the player's answer." : "Drills: build a rally shot by shot — players move and recover automatically."}</div>
         <button class="btn pri" id="labStart" style="width:100%;margin-top:14px;">Start building →</button>
         <div style="border-top:1px solid var(--line);margin-top:16px;padding-top:12px;">
@@ -109,7 +109,7 @@ export function renderLibrary(){
     view.querySelectorAll("[data-lab]").forEach(el=>el.onclick=()=>{
       const [k,v]=el.dataset.lab.split(":"); screen.lab[k]=v; draw();
     });
-    document.getElementById("labStart").onclick = ()=>openBuild(screen.lab.category==="singles" ? "pro3d" : "lab", null, { ...screen.lab });
+    document.getElementById("labStart").onclick = ()=>openBuild(screen.lab.category!=="mixed" ? "pro3d" : "lab", null, { ...screen.lab });
     view.querySelectorAll("[data-pick]").forEach(el=>el.onclick=()=>openBuild(el.dataset.pick, null));
   };
 
@@ -120,7 +120,7 @@ export function renderLibrary(){
     const isLab = kind === "lab", isPro = kind === "pro3d";
     const entry = (isLab||isPro) ? null : (courtBy(kind) || COURTS[0]);
     const mountIt = (el, mountMode, points, labOpts)=> isPro
-      ? mountProCourt(el, { mode:mountMode, points, feed:labOpts.feed })
+      ? mountProCourt(el, { mode:mountMode, points, feed:labOpts.feed, category:labOpts.category })
       : isLab
         ? mountCourtLab(el, { mode:mountMode, points, category:labOpts.category, view:labOpts.view, feed:labOpts.feed })
         : entry.mount(el, { mode:mountMode, points });
@@ -175,7 +175,7 @@ export function renderLibrary(){
       if(!title){ msg.style.color="var(--down)"; msg.textContent="Give the drill a name."; return; }
       if(!mounted.hasShots()){ msg.style.color="var(--down)"; msg.textContent="Add at least one shot first."; return; }
       const court = isPro
-        ? { kind:"pro3d", category:"singles", mode:lab.feed, points:mounted.getPoints() }
+        ? { kind:"pro3d", category:lab.category||"singles", mode:lab.feed, points:mounted.getPoints() }
         : isLab
           ? { kind:"lab", category:lab.category, view:(mounted.getView?mounted.getView():lab.view), mode:lab.feed, points:mounted.getPoints() }
           : { kind, points:mounted.getPoints() };

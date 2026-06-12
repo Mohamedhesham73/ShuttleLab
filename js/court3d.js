@@ -47,6 +47,8 @@ const SHOTS = {
 };
 const SHOT_ORDER = ["servelow","servehigh","serveflick","clear","attclear","drop","fastdrop","smash","jsmash","halfsmash","drive","push","net","kill","lift","block"];
 const FAST = { smash:1, jsmash:1, halfsmash:1, kill:1, drive:1 };
+// shots that surrender the attack → your pair drops into side-by-side defense
+const DEFENSIVE = { clear:1, lift:1, servehigh:1, serveflick:1, block:1 };
 const DCOLS = ["#a4dd2b","#ffd34d","#ff9f45","#ff5d6c","#ff8ad8","#c77dff","#8a7bff","#5db9ff","#34d8b5","#e03131","#9aa49a","#ffffff",
                "#4d7c0f","#b45309","#8f1d1d","#9d174d","#5b21b6","#1e56b0","#0e7490","#1e7a3c","#52525b","#27272a"];
 
@@ -80,14 +82,18 @@ const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const dist2=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
 const ease=k=>k<.5?2*k*k:1-Math.pow(-2*k+2,2)/2;
 
-function serveBox(sx,sy){
-  const fromA = sy < CT.NET, rightHalf = sx >= CT.CX;
-  const x1 = rightHalf ? CT.SIN : CT.CX, x2 = rightHalf ? CT.CX : CT.SXL;
-  const y1 = fromA ? CT.SSLB : 0, y2 = fromA ? CT.L : CT.SSLA;
+// legal diagonal service court: singles = long & narrow (to the baseline,
+// singles sideline); doubles = short & wide (to the doubles long service
+// line, doubles sideline) — per the Laws of Badminton.
+function serveBox(sx,sy,cat){
+  const fromA = sy < CT.NET, rightHalf = sx >= CT.CX, dbl = cat==="doubles";
+  const sideL = dbl?0:CT.SIN, sideR = dbl?CT.W:CT.SXL;
+  const x1 = rightHalf ? sideL : CT.CX, x2 = rightHalf ? CT.CX : sideR;
+  const y1 = fromA ? CT.SSLB : (dbl?CT.DLSA:0), y2 = fromA ? (dbl?CT.DLSB:CT.L) : CT.SSLA;
   return { x1:Math.min(x1,x2), x2:Math.max(x1,x2), y1:Math.min(y1,y2), y2:Math.max(y1,y2) };
 }
 const inBox=(b,x,y)=> x>=b.x1-0.05 && x<=b.x2+0.05 && y>=b.y1-0.05 && y<=b.y2+0.05;
-const inSingles=(x,y)=> x>=CT.SIN-0.05 && x<=CT.SXL+0.05 && y>=-0.05 && y<=CT.L+0.05;
+const inCourt=(cat,x,y)=>{ const dbl=cat==="doubles"; const a=dbl?0:CT.SIN, b=dbl?CT.W:CT.SXL; return x>=a-0.05 && x<=b+0.05 && y>=-0.05 && y<=CT.L+0.05; };
 // tr.z1 = arrival height (0 = lands on the floor; contact height when the
 // next player takes it straight out of the air)
 function flightPos(tr,k){ return { x:tr.x1+(tr.x2-tr.x1)*k, y:tr.y1+(tr.y2-tr.y1)*k, z:tr.z0*(1-k)+(tr.z1||0)*k+tr.h*Math.sin(Math.PI*k) }; }
@@ -112,11 +118,12 @@ export function mountProCourt(container, opts){
   opts = opts || {};
   const editing = (opts.mode||"edit") !== "play";
   const feed = opts.feed || "drill";
+  const cat = opts.category==="doubles" ? "doubles" : "singles";
   const uid = "pc"+Math.floor(Math.random()*1e6);
   const gid = s => container.querySelector("#"+uid+s);
 
   // ---- saved data (legacy array OR {steps, feeder, nA, nB}) ----
-  let meta = { nA:1, nB:1, feeder:{x:3.05,y:7.6}, bases:{}, rate:"normal" };
+  let meta = { nA:(cat==="doubles"?2:1), nB:(cat==="doubles"?2:1), feeder:{x:3.05,y:7.6}, bases:{}, rate:"normal" };
   let steps = [];
   if(Array.isArray(opts.points)) steps = JSON.parse(JSON.stringify(opts.points));
   else if(opts.points && typeof opts.points==="object"){
@@ -167,7 +174,7 @@ export function mountProCourt(container, opts){
   container.innerHTML = `
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
       ${Object.keys(CAMS).map(k=>`<span class="chip ${k==="broadcast"?"on":""}" id="${uid}cam_${k}">🎥 ${CAMS[k].name}</span>`).join("")}
-      <span class="muted" style="font-size:12px;margin-left:auto;">Singles · ${feed==="multi"?"Multi-shuttle":"Drill"}</span>
+      <span class="muted" style="font-size:12px;margin-left:auto;">${cat==="doubles"?"Doubles":"Singles"} · ${feed==="multi"?"Multi-shuttle":"Drill"}</span>
     </div>
     <div style="display:flex;justify-content:center;background:linear-gradient(#0a1822,#0c1410);border:1px solid var(--line);border-radius:14px;overflow:hidden;">
       <svg id="${uid}svg" viewBox="0 0 ${VW} ${VH}" style="width:100%;height:auto;touch-action:manipulation;">
@@ -182,6 +189,7 @@ export function mountProCourt(container, opts){
       <select id="${uid}shot" style="flex:1;min-width:130px;">${SHOT_ORDER.map(k=>`<option value="${k}">${SHOTS[k].name}</option>`).join("")}</select>
       <span class="chip" id="${uid}ss">Set start</span>
       <span class="chip" id="${uid}mv">Move</span>
+      ${(cat==="doubles"&&feed!=="multi") ? `<span class="chip on" id="${uid}rot">Auto rotate</span>` : ``}
       ${feed==="multi" ? `<span class="chip" id="${uid}fd">Place feeder</span><select id="${uid}rate" style="width:auto;font-size:12px;"><option value="fast">Rapid feed</option><option value="normal">Steady feed</option><option value="slow">Relaxed feed</option></select>` : ``}
       <button class="btn" id="${uid}rec" style="padding:7px 11px;font-size:12px;">Recover</button>
       <button class="btn" id="${uid}undo" style="padding:7px 11px;font-size:12px;">Undo</button>
@@ -217,6 +225,7 @@ export function mountProCourt(container, opts){
   let tl = null;
   let mvSel = null, mvOn = false, fdOn = false;   // Move tool / Place-feeder tool
   let ssSel = null, ssOn = false;                 // Set-start tool (positions, not steps)
+  let autoRot = true;                             // doubles 2v2 formation rotation
 
   // ---------- static rendering ----------
   function polyPts(arr){ return arr.filter(Boolean).map(p=>p[0].toFixed(1)+","+p[1].toFixed(1)).join(" "); }
@@ -252,7 +261,7 @@ export function mountProCourt(container, opts){
     }
     gid("net").innerHTML = net;
     gid("zone").innerHTML = (pend && SHOTS[curShot()].serve)
-      ? (()=>{ const b=serveBox(pend.from.x,pend.from.y);
+      ? (()=>{ const b=serveBox(pend.from.x,pend.from.y,cat);
           const pts=[proj(b.x1,b.y1,0),proj(b.x2,b.y1,0),proj(b.x2,b.y2,0),proj(b.x1,b.y2,0)];
           return pts.every(Boolean) ? `<polygon points="${polyPts(pts)}" fill="rgba(164,221,43,.20)" stroke="#a4dd2b" stroke-width="1.4" stroke-dasharray="6 4"/>` : ""; })()
       : "";
@@ -349,7 +358,8 @@ export function mountProCourt(container, opts){
     const movers=[], flights=[], poses=[], fx=[], segs=[];
     const P={}; players.forEach(pl=>P[pl.p]={x:pl.base.x,y:pl.base.y});
     const avail={}; players.forEach(pl=>avail[pl.p]=0);
-    const oneVone = feed!=="multi" && meta.nA===1 && meta.nB===1;
+    const oneVone = cat==="singles" && feed!=="multi" && meta.nA===1 && meta.nB===1;
+    const twoTwo  = cat==="doubles" && feed!=="multi" && meta.nA===2 && meta.nB===2 && autoRot;
     const nextHit=(i)=>{ for(let k=i+1;k<steps.length;k++){ if(!steps[k].rec) return steps[k]; } return null; };
     let prevFlight=null, tEnd=0, lastContact=0;
 
@@ -429,6 +439,39 @@ export function mountProCourt(container, opts){
           movers.push({p:other,from:{...P[other]},to:{...ob},t0:contact+sh.dur*0.5,t1:contact+sh.dur*0.5+clamp(dist2(P[other],ob)/5,0.3,1.2)});
           P[other]={...ob};
         }
+      }
+      // doubles rotation (2v2): attacking shot → that pair flows FRONT-AND-BACK
+      // while the opponents flatten SIDE-BY-SIDE; a lift/clear swaps it — the
+      // real doubles habit, flowing during the flight. Move steps override it.
+      if(twoTwo){
+        const ht = hitter[0]==="A" ? "A" : "B", ot = ht==="A" ? "B" : "A";
+        const atk = !DEFENSIVE[st.shot];
+        const nhh = nh ? ((nh.hitter&&P[nh.hitter])?nh.hitter:null) : null;
+        const slots=(team,stance)=>{
+          const sgn = team==="A"?-1:1, Y=d=>CT.NET+sgn*d;
+          return stance==="attack" ? [{x:CT.CX,y:Y(1.6)},{x:CT.CX,y:Y(4.3)}] : [{x:1.7,y:Y(3.4)},{x:4.4,y:Y(3.4)}];
+        };
+        [[ht, atk?"attack":"defend"],[ot, atk?"defend":"attack"]].forEach(pair=>{
+          const tm=pair[0], stance=pair[1], ids=[tm+"1",tm+"2"].filter(id=>P[id]);
+          if(ids.length<2) return;
+          const sl=slots(tm,stance);
+          let a=ids[0], b=ids[1];
+          if(stance==="attack"){
+            // whoever is nearer the net takes the front slot
+            if(Math.abs(P[b].y-CT.NET) < Math.abs(P[a].y-CT.NET)){ const t2=a; a=b; b=t2; }
+          }else{
+            // side-by-side without crossing: left player takes the left half
+            if(P[b].x < P[a].x){ const t2=a; a=b; b=t2; }
+          }
+          [[a,sl[0]],[b,sl[1]]].forEach(asg=>{
+            const id=asg[0], slot=asg[1];
+            if(id===nhh) return;               // the next hitter is busy chasing the shuttle
+            if(dist2(P[id],slot)<0.15) return;
+            movers.push({p:id,from:{...P[id]},to:{...slot},t0:contact+0.1,t1:contact+0.1+clamp(dist2(P[id],slot)/4.8,0.25,1.2)});
+            P[id]={...slot};
+          });
+        });
+        if(FAST[st.shot]) [ot+"1",ot+"2"].forEach(id=>{ if(P[id]) poses.push({p:id,pose:"defense",t0:contact+sh.dur*0.35,t1:contact+sh.dur+0.15}); });
       }
       prevFlight={t0:contact,t1:contact+sh.dur,to:{...st.to},idx:i};
       lastContact=contact;
@@ -605,10 +648,10 @@ export function mountProCourt(container, opts){
       hint(sh.serve ? "Legal service court highlighted — tap where the serve lands." : "Now tap where the "+sh.name.toLowerCase()+" lands"+(hitter?" ("+hitter+" hits)":"")+".");
       renderStatic(); return;
     }
-    if(sh.serve && !inBox(serveBox(pend.from.x,pend.from.y), c.x, c.y)){ hint("Illegal serve — it must land in the highlighted diagonal box.", true); return; }
+    if(sh.serve && !inBox(serveBox(pend.from.x,pend.from.y,cat), c.x, c.y)){ hint("Illegal serve — it must land in the highlighted diagonal box ("+(cat==="doubles"?"short & wide in doubles":"long & narrow in singles")+").", true); return; }
     if(!sh.serve && feed!=="multi" && ((c.y<CT.NET)===(pend.from.y<CT.NET))){ hint("The shuttle must cross the net — tap the other side.", true); return; }
     const st={ shot:curShot(), color:drawColor, from:pend.from, to:{x:+c.x.toFixed(2), y:+c.y.toFixed(2)}, hitter:pend.hitter, note:"" };
-    st.out = !sh.serve && !inSingles(st.to.x, st.to.y);
+    st.out = !sh.serve && !inCourt(cat, st.to.x, st.to.y);
     // reachability check: in a chained rally, can the hitter cover the ground
     // during the incoming flight? (~6 m/s is elite court speed)
     let warn="";
@@ -689,6 +732,8 @@ export function mountProCourt(container, opts){
     if(fd) fd.onclick=function(){ fdOn=!fdOn; mvOn=false; mvSel=null; ssOn=false; ssSel=null; gid("mv").classList.remove("on"); gid("ss").classList.remove("on"); this.classList.toggle("on",fdOn); pend=null; renderStatic(); hint(fdOn?"Tap anywhere on the court to place the feeder.":"Feeder placement cancelled."); };
     const rate=gid("rate");
     if(rate){ rate.value=meta.rate; rate.onchange=()=>{ meta.rate=rate.value; afterStepsChange(); hint("Feed rhythm: "+rate.options[rate.selectedIndex].text+"."); }; }
+    const rot=gid("rot");
+    if(rot) rot.onclick=function(){ autoRot=!autoRot; this.classList.toggle("on",autoRot); afterStepsChange(); hint(autoRot?"Auto rotation ON — pairs flow front-and-back / side-by-side like a real match.":"Auto rotation OFF — you choreograph every movement with Move."); };
     gid("rec").onclick=()=>{
       let p="A1";
       for(let i=steps.length-1;i>=0;i--){ if(!steps[i].rec){ p = steps[i].hitter || (feed==="multi" ? "A1" : (steps[i].from.y<CT.NET?"A1":"B1")); break; } }
