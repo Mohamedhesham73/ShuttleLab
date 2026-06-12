@@ -1,6 +1,5 @@
 import { state, esc } from "../core.js";
-import { COACH_CONTACT } from "../config.js";
-import { listenGiftJar, saveGiftJar, getPlan, savePlan } from "../data.js";
+import { listenGiftJar, saveGiftJar, getPlan, savePlan, postTraining, listenTraining } from "../data.js";
 
 // =============================================================
 //  MIND ROOM — a quiet, ever-changing place to land.
@@ -61,6 +60,9 @@ export function renderMindRoom(){
   const view = document.getElementById("view");
   const coach = state.role === "coach";
   const firstName = (state.name||"champion").split(" ")[0];
+  const coachMember = state.roster.find(u=>u.role==="coach");
+  const coachId = coachMember ? String(coachMember.id) : null;
+  const coachName = coachMember ? coachMember.name : "your coach";
   const hour = new Date().getHours();
   const tod = hour<12 ? "morning" : hour<18 ? "afternoon" : "evening";
 
@@ -139,8 +141,9 @@ export function renderMindRoom(){
           <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
             <button id="mrStar" style="flex:1;min-width:96px;background:rgba(0,0,0,.3);color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:12px;padding:9px;font-size:12px;">Leave a star</button>
             <button id="mrGame" style="flex:1;min-width:96px;background:rgba(0,0,0,.3);color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:12px;padding:9px;font-size:12px;">Hold my hand</button>
-            ${COACH_CONTACT.whatsapp ? `<button id="mrTalk" style="flex:1;min-width:96px;background:var(--brand);color:#0b0e0c;border:none;border-radius:12px;padding:9px;font-size:12px;font-weight:600;">Talk to ${esc(COACH_CONTACT.name)}</button>` : ``}
-            ${coach ? `<button id="mrJar" style="flex:1;min-width:96px;background:rgba(0,0,0,.3);color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:12px;padding:9px;font-size:12px;">My words</button>` : ``}
+            ${coach
+              ? `<button id="mrJar" style="flex:1;min-width:96px;background:rgba(0,0,0,.3);color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:12px;padding:9px;font-size:12px;">My words</button><button id="mrInbox" style="flex:1;min-width:96px;background:rgba(0,0,0,.3);color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:12px;padding:9px;font-size:12px;">Messages</button>`
+              : `<button id="mrTalk" style="flex:1;min-width:96px;background:var(--brand);color:#0b0e0c;border:none;border-radius:12px;padding:9px;font-size:12px;font-weight:600;">Talk to ${esc(coachName.split(" ")[0])}</button>`}
           </div>
         </div>
       </div>`;
@@ -190,12 +193,41 @@ export function renderMindRoom(){
     document.getElementById("mrStar").onclick = ()=> openStar(reroll);
     document.getElementById("mrGame").onclick = ()=> renderGame();
     const talk = document.getElementById("mrTalk");
-    if(talk) talk.onclick = ()=>{
-      const msg = encodeURIComponent("Hi Coach, I could use a word.");
-      window.open("https://wa.me/"+COACH_CONTACT.whatsapp+"?text="+msg, "_blank");
-    };
+    if(talk) talk.onclick = ()=> composeMessage();
     const jar = document.getElementById("mrJar");
     if(jar) jar.onclick = ()=> renderJar();
+    const inbox = document.getElementById("mrInbox");
+    if(inbox) inbox.onclick = ()=> renderInbox();
+
+    // player → coach private message (in-app, straight to the coach's inbox)
+    function composeMessage(){
+      const wrap = document.createElement("div");
+      wrap.style.cssText = "position:absolute;inset:0;z-index:5;background:rgba(6,8,7,.82);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px;text-align:center;";
+      wrap.innerHTML = `
+        <div style="color:#fff;font-size:17px;">Tell ${esc(coachName.split(" ")[0])} anything.</div>
+        <div style="color:#fff;opacity:.7;font-size:12px;margin-top:-4px;">It goes straight to your coach — no one else sees it.</div>
+        <textarea id="mrMsg" rows="4" placeholder="What's on your mind?" style="width:100%;max-width:300px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.2);border-radius:12px;color:#fff;padding:11px;font-size:14px;resize:vertical;"></textarea>
+        <div style="display:flex;gap:10px;">
+          <button id="mrSend" style="background:var(--brand);color:#0b0e0c;border:none;border-radius:20px;padding:9px 18px;font-size:13px;font-weight:600;">Send</button>
+          <button id="mrMsgClose" style="background:transparent;color:#fff;opacity:.75;border:1px solid rgba(255,255,255,.25);border-radius:20px;padding:9px 16px;font-size:13px;">close</button>
+        </div>
+        <div id="mrMsgOk" style="color:var(--brand);font-size:13px;min-height:16px;"></div>`;
+      document.getElementById("mrRoom").appendChild(wrap);
+      wrap.querySelector("#mrMsgClose").onclick = ()=> wrap.remove();
+      wrap.querySelector("#mrSend").onclick = async ()=>{
+        const txt = wrap.querySelector("#mrMsg").value.trim();
+        const ok = wrap.querySelector("#mrMsgOk");
+        if(!txt){ ok.style.color="#ff8a8a"; ok.textContent="Write a little something first."; return; }
+        if(!coachId){ ok.style.color="#ff8a8a"; ok.textContent="No coach is set up yet."; return; }
+        ok.style.color="#fff"; ok.textContent="Sending…";
+        try{
+          await postTraining({ uid:coachId, kind:"reachout", text:txt, fromName:state.name, fromId:String(state.user.id), dateISO:new Date().toISOString().slice(0,10), ts:Date.now() });
+          ok.style.color="var(--brand)"; ok.textContent="Sent. "+esc(coachName.split(" ")[0])+" will see it. You're not alone. ♥";
+          engine.celebrate();
+          setTimeout(()=> wrap.remove(), 1800);
+        }catch(e){ ok.style.color="#ff8a8a"; ok.textContent="Couldn't send: "+(e.message||e); }
+      };
+    }
 
     function updateSky(){
       const el=document.getElementById("mrSky"); if(!el) return;
@@ -304,6 +336,30 @@ export function renderMindRoom(){
       });
     };
     draw();
+  }
+
+  // ---------------- COACH: inbox of players' messages ----------------
+  function renderInbox(){
+    let un = null;
+    view.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+        <button class="btn" id="ibBack" style="padding:7px 12px;font-size:12px;">← Back</button>
+        <div class="disp" style="font-size:18px;">Messages from your players</div>
+      </div>
+      <div class="muted" style="font-size:13px;margin-bottom:14px;">Private notes players sent you from the Mind Room. If one feels heavy, reach out to them.</div>
+      <div id="ibList"><div class="muted">Loading…</div></div>`;
+    document.getElementById("ibBack").onclick = ()=>{ if(un){ try{ un(); }catch(e){} } renderRoom(); };
+    un = listenTraining(coachId, (items, err)=>{
+      const el = document.getElementById("ibList"); if(!el) return;
+      if(err){ el.innerHTML = `<div class="err">${esc(err.message)}</div>`; return; }
+      const msgs = (items||[]).filter(m=>m.kind==="reachout");
+      el.innerHTML = msgs.length ? msgs.map(m=>`
+        <div class="card fade" style="padding:14px;margin-bottom:10px;">
+          <div class="muted" style="font-size:12px;margin-bottom:5px;">${esc(m.fromName||"A player")} · ${esc(new Date(m.ts||Date.now()).toLocaleDateString(undefined,{month:"short",day:"numeric"}))}</div>
+          <div style="font-size:14px;line-height:1.55;white-space:pre-wrap;">${esc(m.text)}</div>
+        </div>`).join("") : `<div class="muted">No messages yet.</div>`;
+    });
+    state.unsub.push(()=>{ if(un){ try{ un(); }catch(e){} } });
   }
 
   function pickDifferent(cur){ let k; do{ k=pick(SCENE_KEYS); }while(SCENES[k]===SCENES[cur] && SCENE_KEYS.length>1); return k; }
