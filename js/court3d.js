@@ -43,7 +43,7 @@ const SHOTS = {
 };
 const SHOT_ORDER = ["servelow","servehigh","serveflick","clear","attclear","drop","fastdrop","smash","jsmash","halfsmash","drive","push","net","kill","lift","block"];
 const FAST = { smash:1, jsmash:1, halfsmash:1, kill:1, drive:1 };
-const DCOLS = ["#a4dd2b","#ffd34d","#ff5d6c","#5db9ff","#c77dff","#ffffff"];
+const DCOLS = ["#a4dd2b","#ffd34d","#ff9f45","#ff5d6c","#ff8ad8","#c77dff","#8a7bff","#5db9ff","#34d8b5","#e03131","#9aa49a","#ffffff"];
 
 const CAMS = {
   broadcast:{ name:"Broadcast", C:[3.05,-9.0,5.4], T:[3.05,7.6,0.1], F:580 },
@@ -199,7 +199,7 @@ export function mountProCourt(container, opts){
     <div id="${uid}list" style="margin-top:10px;display:flex;flex-direction:column;gap:5px;"></div>`;
 
   let drawColor = DCOLS[0], pend = null, raf = null, playing = false;
-  let tCur = 0, stopAt = 0, lastTs = 0, activeIdx = -1;
+  let tCur = 0, stopAt = 0, lastTs = 0, activeIdx = -1, loopT0 = 0;
   let tl = null;
   let mvSel = null, mvOn = false, fdOn = false;   // Move tool / Place-feeder tool
   let ssSel = null, ssOn = false;                 // Set-start tool (positions, not steps)
@@ -622,13 +622,13 @@ export function mountProCourt(container, opts){
     if(!document.body.contains(gid("svg"))){ stop(); return; }
     if(!lastTs) lastTs=ts;
     tCur += (ts-lastTs)/1000*speed(); lastTs=ts;
-    if(tCur>=stopAt){ tCur=stopAt; renderDynamic(tCur); stop(); return; }
-    renderDynamic(tCur);
+    if(tCur>=stopAt) tCur = loopT0-0.35;   // loop again and again until paused
+    renderDynamic(Math.max(0,tCur));
     raf=requestAnimationFrame(loop);
   }
   function playFrom(t0, t1){
     if(!tl || !tl.total) return;
-    tCur=t0; stopAt=t1; lastTs=0; playing=true;
+    tCur=t0; stopAt=t1; loopT0=t0; lastTs=0; playing=true;
     gid("play").textContent="❚❚ Pause";
     raf=requestAnimationFrame(loop);
   }
@@ -657,8 +657,8 @@ export function mountProCourt(container, opts){
   // ---------- wire ----------
   gid("svg").addEventListener("pointerdown", onTap);
   Object.keys(CAMS).forEach(k=>{ gid("cam_"+k).onclick=()=>setCam(k); });
-  gid("play").onclick=()=>{ if(playing){ stop(); } else if(tl && tCur>0 && tCur<stopAt){ lastTs=0; playing=true; gid("play").textContent="❚❚ Pause"; raf=requestAnimationFrame(loop); } else { tCur=0; activeIdx=-1; playFrom(0, tl?tl.total:0); } };
-  gid("rst").onclick=()=>{ stop(); tCur=0; activeIdx=-1; renderStatic(); renderDynamic(0); markList(-1); showNote(-1); };
+  gid("play").onclick=()=>{ if(playing){ stop(); } else if(tl && stopAt>0 && tCur<stopAt){ lastTs=0; playing=true; gid("play").textContent="❚❚ Pause"; raf=requestAnimationFrame(loop); } else { tCur=0; activeIdx=-1; playFrom(0, tl?tl.total:0); } };
+  gid("rst").onclick=()=>{ stop(); tCur=0; stopAt=0; activeIdx=-1; renderStatic(); renderDynamic(0); markList(-1); showNote(-1); };
   if(editing){
     DCOLS.forEach(c=>{
       const b=document.createElement("button");
