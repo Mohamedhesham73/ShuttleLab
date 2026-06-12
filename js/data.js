@@ -55,6 +55,15 @@ export function listenSchedule(cb){
 }
 export function saveSchedule(list){ return setDoc(doc(db,"plans","__schedule"), { list }, { merge:true }); }
 
+// Mind Room "gift jar": the coach's own encouragements, mixed into what players
+// receive. Shared doc, reuses the plans rule. cb(list of strings).
+export function listenGiftJar(cb){
+  return onSnapshot(doc(db,"plans","__giftjar"),
+    d=>cb(d.exists() && Array.isArray(d.data().list) ? d.data().list : []),
+    err=>cb([], err));
+}
+export function saveGiftJar(list){ return setDoc(doc(db,"plans","__giftjar"), { list }, { merge:true }); }
+
 // ---- Drill / shot library ----
 export function listenDrills(cb){
   return onSnapshot(collection(db,"drills"),

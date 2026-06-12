@@ -44,6 +44,11 @@ export const TESTS = [
 // Max video upload size (MB). Enforced client-side and in the Vercel API.
 export const MAX_UPLOAD_MB = 500;
 
+// Coach contact for the Mind Room "talk to coach" button. Put the WhatsApp
+// number in full international form, digits only (e.g. "201001234567" for
+// Egypt). Leave whatsapp "" to hide the button.
+export const COACH_CONTACT = { name: "Coach Ahmed", whatsapp: "" };
+
 // -------------------------------------------------------------
 //  TOURNAMENT CALENDAR (2026 season). Reference data the coach
 //  picks from per player on the Training page. Dates are ISO

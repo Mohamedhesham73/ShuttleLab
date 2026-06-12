@@ -10,6 +10,7 @@ import { renderTraining } from "./views/training.js";
 import { renderLibrary } from "./views/library.js";
 import { renderMatches } from "./views/matches.js";
 import { renderLeaderboard } from "./views/leaderboard.js";
+import { renderMindRoom } from "./views/mindroom.js";
 
 const VIEWS = {
   dash: renderDashboard,
@@ -18,7 +19,8 @@ const VIEWS = {
   train: renderTraining,
   library: renderLibrary,
   matches: renderMatches,
-  board: renderLeaderboard
+  board: renderLeaderboard,
+  mind: renderMindRoom
 };
 
 function renderApp(){
