@@ -1,5 +1,5 @@
-import { state, esc } from "../core.js";
-import { listenGiftJar, saveGiftJar, getPlan, savePlan, postTraining, listenTraining } from "../data.js";
+import { state, esc, toast } from "../core.js";
+import { listenGiftJar, saveGiftJar, getPrivate, savePrivate, addMessage, listenMessages } from "../data.js";
 
 // =============================================================
 //  MIND ROOM — a quiet, ever-changing place to land.
@@ -61,7 +61,6 @@ export function renderMindRoom(){
   const coach = state.role === "coach";
   const firstName = (state.name||"champion").split(" ")[0];
   const coachMember = state.roster.find(u=>u.role==="coach");
-  const coachId = coachMember ? String(coachMember.id) : null;
   const coachName = coachMember ? coachMember.name : "your coach";
   const hour = new Date().getHours();
   const tod = hour<12 ? "morning" : hour<18 ? "afternoon" : "evening";
@@ -80,9 +79,9 @@ export function renderMindRoom(){
   let coachGifts = [];
   state.unsub.push(listenGiftJar(list=>{ coachGifts = list||[]; }));
 
-  // player's private "sky" (mood stars), loaded once
+  // player's private "sky" (mood stars) — kept in the owner-only private store
   let stars = [];
-  getPlan(String(state.user.id)).then(p=>{ stars = (p && p.stars) || []; }).catch(()=>{});
+  getPrivate(state.uid).then(p=>{ stars = (p && p.stars) || []; }).catch(()=>{});
 
   const allGifts = ()=> GIFTS.concat(coachGifts);
 
@@ -218,10 +217,9 @@ export function renderMindRoom(){
         const txt = wrap.querySelector("#mrMsg").value.trim();
         const ok = wrap.querySelector("#mrMsgOk");
         if(!txt){ ok.style.color="#ff8a8a"; ok.textContent="Write a little something first."; return; }
-        if(!coachId){ ok.style.color="#ff8a8a"; ok.textContent="No coach is set up yet."; return; }
         ok.style.color="#fff"; ok.textContent="Sending…";
         try{
-          await postTraining({ uid:coachId, kind:"reachout", text:txt, fromName:state.name, fromId:String(state.user.id), dateISO:new Date().toISOString().slice(0,10), ts:Date.now() });
+          await addMessage({ fromUid:state.uid, fromName:state.name, fromId:String(state.user.id), text:txt, ts:Date.now() });
           ok.style.color="var(--brand)"; ok.textContent="Sent. "+esc(coachName.split(" ")[0])+" will see it. You're not alone. ♥";
           engine.celebrate();
           setTimeout(()=> wrap.remove(), 1800);
@@ -259,7 +257,7 @@ export function renderMindRoom(){
         const star = { mood:b.dataset.m, ts:Date.now() };
         stars = stars.concat([star]);
         renderSky(); updateSky(); engine.celebrate();
-        try{ await savePlan(String(state.user.id), { stars }); }catch(e){}
+        try{ await savePrivate(state.uid, { stars }); }catch(e){ toast("Couldn't save your star — check your connection.","err"); }
         setTimeout(()=>{ wrap.remove(); }, 700);
       });
       wrap.querySelector("#mrStarClose").onclick = ()=> wrap.remove();
@@ -326,12 +324,12 @@ export function renderMindRoom(){
       document.getElementById("jarAdd").onclick = async ()=>{
         const t=document.getElementById("jarText").value.trim(); if(!t) return;
         list = list.concat([t]); coachGifts = list;
-        try{ await saveGiftJar(list); }catch(e){}
+        try{ await saveGiftJar(list); }catch(e){ toast("Couldn't save — check your connection.","err"); }
         draw();
       };
       view.querySelectorAll("[data-jdel]").forEach(b=>b.onclick=async ()=>{
         list = list.filter((_,i)=>i!==parseInt(b.dataset.jdel,10)); coachGifts = list;
-        try{ await saveGiftJar(list); }catch(e){}
+        try{ await saveGiftJar(list); }catch(e){ toast("Couldn't save — check your connection.","err"); }
         draw();
       });
     };
@@ -349,10 +347,10 @@ export function renderMindRoom(){
       <div class="muted" style="font-size:13px;margin-bottom:14px;">Private notes players sent you from the Mind Room. If one feels heavy, reach out to them.</div>
       <div id="ibList"><div class="muted">Loading…</div></div>`;
     document.getElementById("ibBack").onclick = ()=>{ if(un){ try{ un(); }catch(e){} } renderRoom(); };
-    un = listenTraining(coachId, (items, err)=>{
+    un = listenMessages((items, err)=>{
       const el = document.getElementById("ibList"); if(!el) return;
       if(err){ el.innerHTML = `<div class="err">${esc(err.message)}</div>`; return; }
-      const msgs = (items||[]).filter(m=>m.kind==="reachout");
+      const msgs = items || [];
       el.innerHTML = msgs.length ? msgs.map(m=>`
         <div class="card fade" style="padding:14px;margin-bottom:10px;">
           <div class="muted" style="font-size:12px;margin-bottom:5px;">${esc(m.fromName||"A player")} · ${esc(new Date(m.ts||Date.now()).toLocaleDateString(undefined,{month:"short",day:"numeric"}))}</div>

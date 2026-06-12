@@ -1,4 +1,4 @@
-import { state, esc, fmtDate } from "../core.js";
+import { state, esc, fmtDate, toast } from "../core.js";
 import { TOURNAMENTS } from "../config.js";
 import { listenTraining, postTraining, listenPlan, getPlan, savePlan, listenSchedule, saveSchedule } from "../data.js";
 
@@ -60,7 +60,7 @@ export function renderTraining(){
       document.querySelectorAll("[data-trvdel]").forEach(b=>{
         b.onclick = async ()=>{
           const travel=(lastPlan.travel||[]).filter(t=>String(t.id)!==String(b.dataset.trvdel));
-          try{ await savePlan(String(state.user.id), { travel }); }catch(e){}
+          try{ await savePlan(String(state.user.id), { travel }); }catch(e){ toast("Couldn't remove — check your connection.","err"); }
         };
       });
     }
@@ -218,7 +218,7 @@ export function renderTraining(){
       btn.onclick = async ()=>{
         syncTargetFromDOM();
         plan.blocks = (plan.blocks||[]).filter(b=>String(b.id)!==String(btn.dataset.del));
-        try{ await savePlan(curUid, { blocks: plan.blocks }); renderEdit(); }catch(e){}
+        try{ await savePlan(curUid, { blocks: plan.blocks }); renderEdit(); }catch(e){ toast("Couldn't save — check your connection.","err"); }
       };
     });
 
@@ -228,7 +228,7 @@ export function renderTraining(){
         const id=row.dataset.tg, set=new Set(plan.tournaments||[]);
         if(set.has(id)) set.delete(id); else set.add(id);
         plan.tournaments = Array.from(set);
-        try{ await savePlan(curUid, { tournaments: plan.tournaments }); renderEdit(); }catch(e){}
+        try{ await savePlan(curUid, { tournaments: plan.tournaments }); renderEdit(); }catch(e){ toast("Couldn't save — check your connection.","err"); }
       };
     });
 

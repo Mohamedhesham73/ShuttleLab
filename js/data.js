@@ -64,6 +64,34 @@ export function listenGiftJar(cb){
 }
 export function saveGiftJar(list){ return setDoc(doc(db,"plans","__giftjar"), { list }, { merge:true }); }
 
+// ---- Private per-user store (Mind Room mood "stars"). Owner-only by rules. ----
+export async function getPrivate(uid){
+  const d = await getDoc(doc(db,"private",String(uid)));
+  return d.exists() ? d.data() : {};
+}
+export function savePrivate(uid, data){ return setDoc(doc(db,"private",String(uid)), data, { merge:true }); }
+
+// ---- Player → coach messages (Mind Room). Sender/coach only by rules. ----
+export function addMessage(data){ return addDoc(collection(db,"messages"), data); }
+export function listenMessages(cb){
+  return onSnapshot(collection(db,"messages"),
+    s=>{ const a=[]; s.forEach(d=>a.push({ docId:d.id, ...d.data() })); a.sort((x,y)=>(y.ts||0)-(x.ts||0)); cb(a); },
+    err=>cb(null, err));
+}
+
+// ---- Delete objects from R2 (coach only; the server enforces it). ----
+export async function deleteR2(keys){
+  const list = (keys||[]).filter(Boolean);
+  if(!list.length) return;
+  const user = auth.currentUser; if(!user) return;
+  const token = await user.getIdToken();
+  await fetch("/api/r2-delete", {
+    method:"POST",
+    headers:{ "Content-Type":"application/json", Authorization:"Bearer "+token },
+    body: JSON.stringify({ keys:list })
+  }).catch(()=>{});  // best-effort cleanup; never blocks the user-facing delete
+}
+
 // ---- Drill / shot library ----
 export function listenDrills(cb){
   return onSnapshot(collection(db,"drills"),

@@ -32,6 +32,19 @@ export function avatar(name, photo, size){
   </span>`;
 }
 
+// Small transient message, bottom-centre. kind "err" = red edge, else brand.
+export function toast(msg, kind){
+  let el = document.getElementById("__toast");
+  if(!el){
+    el = document.createElement("div"); el.id = "__toast";
+    el.style.cssText = "position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:9999;max-width:90%;padding:11px 16px;border-radius:12px;font-size:13px;color:#fff;background:rgba(20,24,20,.96);border:1px solid var(--line);box-shadow:0 6px 24px rgba(0,0,0,.45);opacity:0;transition:opacity .25s;pointer-events:none;text-align:center;";
+    document.body.appendChild(el);
+  }
+  el.style.borderColor = kind==="err" ? "var(--down)" : "var(--brand)";
+  el.textContent = msg; el.style.opacity = "1";
+  clearTimeout(el._t); el._t = setTimeout(()=>{ el.style.opacity = "0"; }, 2800);
+}
+
 // Detach all live Firestore listeners (called on every view change).
 export function clearUnsub(){
   state.unsub.forEach(u=>{ try{ u(); }catch(e){} });

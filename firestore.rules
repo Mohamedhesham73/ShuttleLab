@@ -11,9 +11,8 @@ service cloud.firestore {
       );
     }
 
-    // The team roster. Any signed-in user may READ it (the app needs names to
-    // show dashboards / leaderboard). Only the coach may change it. Emails are
-    // NOT stored here — only id, name, role, photo.
+    // The team roster. Any signed-in user may READ it (names for dashboards /
+    // leaderboard). Only the coach may change it. No emails are stored here.
     match /members/{id} {
       allow read:  if signedIn();
       allow write: if isCoach();
@@ -24,16 +23,35 @@ service cloud.firestore {
     match /goals/{id}        { allow read, write: if signedIn(); }
     match /drills/{id}       { allow read, write: if signedIn(); }
     match /training/{id}     { allow read, write: if signedIn(); }
-    match /plans/{id}        { allow read, write: if signedIn(); }
 
-    // Videos. Any signed-in member may CREATE a video (coach adds match film;
-    // players upload their own clips for analysis via "My Videos"). Only the
-    // coach may edit content or delete. Players may update ONLY the watchedBy
-    // map (watched/done tracking).
+    // Plans: each player's plan is team-read / signed-in-write, BUT the two
+    // shared docs — the tournament schedule and the coach's gift jar — may only
+    // be written by the coach, so a player can't overwrite them.
+    match /plans/{id} {
+      allow read:  if signedIn();
+      allow write: if isCoach() || (signedIn() && id != '__schedule' && id != '__giftjar');
+    }
+
+    // Private per-user store (Mind Room mood "stars"). Keyed by the user's own
+    // Firebase UID — ONLY that user can ever read or write it. Truly private.
+    match /private/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Player → coach messages from the Mind Room. The sender writes their own
+    // (stamped with their UID); only that sender or the coach can read them.
+    match /messages/{id} {
+      allow create: if signedIn() && request.resource.data.fromUid == request.auth.uid;
+      allow read:   if isCoach() || (signedIn() && resource.data.fromUid == request.auth.uid);
+      allow update, delete: if isCoach();
+    }
+
+    // Videos. Any signed-in member may CREATE (coach adds film; players upload
+    // their own clips). Only the coach edits content; a player may delete a clip
+    // they uploaded. Players may otherwise update ONLY the watchedBy map.
     match /videos/{id} {
       allow read:   if signedIn();
       allow create: if signedIn();
-      // Coach can delete any clip; a player can delete only one they uploaded.
       allow delete: if isCoach()
         || (signedIn() && resource.data.submittedUid == request.auth.uid);
       allow update: if isCoach()

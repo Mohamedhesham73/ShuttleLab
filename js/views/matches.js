@@ -1,5 +1,5 @@
 import { state, esc } from "../core.js";
-import { listenVideos, addVideo, updateVideo, deleteVideo, markVideoWatched, getPlaybackUrl } from "../data.js";
+import { listenVideos, addVideo, updateVideo, deleteVideo, markVideoWatched, getPlaybackUrl, deleteR2 } from "../data.js";
 import { uploadToR2 } from "../r2upload.js";
 
 // =============================================================
@@ -543,6 +543,14 @@ export function renderMatches(){
         if(!confirm("Delete “"+(work.title||"this video")+"”? This can't be undone.")) return;
         delBtn.disabled=true; delBtn.textContent="Deleting…";
         try{
+          // also clear the underlying R2 files (video + any voice notes) so the
+          // bucket doesn't keep orphans. Coach-enforced server-side; best-effort.
+          if(coach){
+            const keys = [];
+            if(work.source && work.source.kind==="r2" && work.source.key) keys.push(work.source.key);
+            (work.markers||[]).forEach(m=>{ if(m.audio && m.audio.kind==="r2" && m.audio.key) keys.push(m.audio.key); });
+            deleteR2(keys);
+          }
           await deleteVideo(work.docId);
           stopLoop(); current=null; renderList();
         }catch(e){
