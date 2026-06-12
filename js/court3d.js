@@ -23,27 +23,32 @@ const CT = { W:6.1, L:13.4, NET:6.7, SSLA:4.72, SSLB:8.68, DLSA:0.76, DLSB:12.64
 const NETH_D = 1.34, NETB_D = 0.58;   // drawn net (slightly shorter, so cleared shots show daylight)
 const VW=760, VH=430;
 
+// z0 = contact height, reach = how far in FRONT of the body the racket
+// meets the shuttle (overheads ~0.3 m above/ahead; net play a full
+// lunge-arm ~0.8 m; drives out to the side). The shuttle always launches
+// from this racket contact point — never from the player's chest.
 const SHOTS = {
-  servelow: { name:"Low serve",   serve:true, z0:1.05, h:0.18, dur:1.05, pose:"serve" },
-  servehigh:{ name:"High serve",  serve:true, z0:1.05, h:6.0,  dur:2.3,  pose:"serve" },
-  serveflick:{name:"Flick serve", serve:true, z0:1.05, h:2.6,  dur:1.35, pose:"serve" },
-  clear:    { name:"Clear",            z0:2.7,  h:4.4,  dur:1.65, pose:"overhead" },
-  attclear: { name:"Attacking clear",  z0:2.7,  h:2.1,  dur:1.1,  pose:"overhead" },
-  drop:     { name:"Drop shot",        z0:2.7,  h:0.3,  dur:1.35, pose:"overhead" },
-  fastdrop: { name:"Fast drop / cut",  z0:2.7,  h:0.1,  dur:0.95, pose:"overhead" },
-  smash:    { name:"Smash",            z0:2.85, h:0,    dur:0.55, pose:"overhead" },
-  jsmash:   { name:"Jump smash",       z0:3.15, h:0,    dur:0.5,  pose:"jump" },
-  halfsmash:{ name:"Half smash",       z0:2.8,  h:0.05, dur:0.8,  pose:"overhead" },
-  drive:    { name:"Drive",            z0:1.6,  h:0.12, dur:0.6,  pose:"drive" },
-  push:     { name:"Push",             z0:1.3,  h:0.35, dur:0.9,  pose:"drive" },
-  net:      { name:"Net shot",         z0:1.0,  h:0.3,  dur:1.0,  pose:"lunge" },
-  kill:     { name:"Net kill",         z0:1.9,  h:0,    dur:0.35, pose:"lunge" },
-  lift:     { name:"Lift / lob",       z0:0.85, h:4.2,  dur:1.55, pose:"lunge" },
-  block:    { name:"Block (defense)",  z0:0.95, h:0.5,  dur:1.0,  pose:"defense" }
+  servelow: { name:"Low serve",   serve:true, z0:1.05, h:0.18, dur:1.05, pose:"serve", reach:0.35 },
+  servehigh:{ name:"High serve",  serve:true, z0:1.05, h:6.0,  dur:2.3,  pose:"serve", reach:0.35 },
+  serveflick:{name:"Flick serve", serve:true, z0:1.05, h:2.6,  dur:1.35, pose:"serve", reach:0.35 },
+  clear:    { name:"Clear",            z0:2.7,  h:4.4,  dur:1.65, pose:"overhead", reach:0.3 },
+  attclear: { name:"Attacking clear",  z0:2.7,  h:2.1,  dur:1.1,  pose:"overhead", reach:0.3 },
+  drop:     { name:"Drop shot",        z0:2.7,  h:0.3,  dur:1.35, pose:"overhead", reach:0.3 },
+  fastdrop: { name:"Slice / cut drop", z0:2.95, h:0,    dur:0.75, pose:"hop",      reach:0.32 },
+  smash:    { name:"Smash",            z0:2.85, h:0,    dur:0.55, pose:"overhead", reach:0.32 },
+  jsmash:   { name:"Jump smash",       z0:3.15, h:0,    dur:0.5,  pose:"jump",     reach:0.32 },
+  halfsmash:{ name:"Half smash",       z0:2.8,  h:0.05, dur:0.8,  pose:"overhead", reach:0.32 },
+  drive:    { name:"Drive",            z0:1.6,  h:0.12, dur:0.6,  pose:"drive",    reach:0.6 },
+  push:     { name:"Push",             z0:1.3,  h:0.35, dur:0.9,  pose:"drive",    reach:0.55 },
+  net:      { name:"Net shot",         z0:1.05, h:0.3,  dur:1.0,  pose:"lunge",    reach:0.85 },
+  kill:     { name:"Net kill",         z0:1.9,  h:0,    dur:0.35, pose:"lunge",    reach:0.8 },
+  lift:     { name:"Lift / lob",       z0:0.8,  h:4.2,  dur:1.55, pose:"lunge",    reach:0.8 },
+  block:    { name:"Block (defense)",  z0:0.95, h:0.5,  dur:1.0,  pose:"defense",  reach:0.5 }
 };
 const SHOT_ORDER = ["servelow","servehigh","serveflick","clear","attclear","drop","fastdrop","smash","jsmash","halfsmash","drive","push","net","kill","lift","block"];
 const FAST = { smash:1, jsmash:1, halfsmash:1, kill:1, drive:1 };
-const DCOLS = ["#a4dd2b","#ffd34d","#ff9f45","#ff5d6c","#ff8ad8","#c77dff","#8a7bff","#5db9ff","#34d8b5","#e03131","#9aa49a","#ffffff"];
+const DCOLS = ["#a4dd2b","#ffd34d","#ff9f45","#ff5d6c","#ff8ad8","#c77dff","#8a7bff","#5db9ff","#34d8b5","#e03131","#9aa49a","#ffffff",
+               "#4d7c0f","#b45309","#8f1d1d","#9d174d","#5b21b6","#1e56b0","#0e7490","#1e7a3c","#52525b","#27272a"];
 
 const CAMS = {
   broadcast:{ name:"Broadcast", C:[3.05,-9.0,5.4], T:[3.05,7.6,0.1], F:580 },
@@ -58,6 +63,7 @@ const POSES = {
   lunge:   { head:[.22,1.45],neck:[.18,1.3],hip:[-.05,.66],kL:[.42,.4],fL:[.58,0],  kR:[-.4,.34],fR:[-.58,.06],hL:[-.3,.95],   hR:[.7,1.0],   rk:[1.04,1.04] },
   overhead:{ head:[.02,1.66],neck:[.05,1.5],hip:[0,.95], kL:[-.25,.5], fL:[-.33,.02],kR:[.22,.52],fR:[.3,.08], hL:[-.3,1.55],  hR:[.18,1.98], rk:[.3,2.32] },
   jump:    { head:[.02,2.06],neck:[.05,1.9],hip:[0,1.34],kL:[-.22,1.02],fL:[-.3,.66],kR:[.3,.98], fR:[.4,.6],  hL:[-.32,1.92], hR:[.22,2.36], rk:[.34,2.7] },
+  hop:     { head:[.02,1.84],neck:[.05,1.68],hip:[0,1.12],kL:[-.22,.78],fL:[-.28,.42],kR:[.28,.74],fR:[.36,.38],hL:[-.32,1.7],  hR:[.2,2.14],  rk:[.32,2.48] },
   serve:   { head:[0,1.6],  neck:[-.02,1.45],hip:[0,.92],kL:[-.18,.5], fL:[-.24,0],  kR:[.2,.5],  fR:[.3,0],   hL:[.3,1.12],   hR:[.26,.8],   rk:[.5,.6] },
   drive:   { head:[.04,1.56],neck:[.03,1.4],hip:[0,.86], kL:[-.24,.48],fL:[-.32,0],  kR:[.26,.46],fR:[.36,0],  hL:[-.34,1.1],  hR:[.5,1.3],   rk:[.86,1.4] },
   defense: { head:[0,1.4],  neck:[0,1.26], hip:[0,.68], kL:[-.34,.4], fL:[-.46,0],  kR:[.34,.4], fR:[.46,0],  hL:[-.4,.95],   hR:[.42,1.0],  rk:[.72,1.12] },
@@ -85,6 +91,14 @@ const inSingles=(x,y)=> x>=CT.SIN-0.05 && x<=CT.SXL+0.05 && y>=-0.05 && y<=CT.L+
 // tr.z1 = arrival height (0 = lands on the floor; contact height when the
 // next player takes it straight out of the air)
 function flightPos(tr,k){ return { x:tr.x1+(tr.x2-tr.x1)*k, y:tr.y1+(tr.y2-tr.y1)*k, z:tr.z0*(1-k)+(tr.z1||0)*k+tr.h*Math.sin(Math.PI*k) }; }
+// where the racket actually meets the shuttle: the player's body stands at
+// st.from, the contact point is `reach` metres toward the target at height z0
+function contactPoint(st){
+  const sh=SHOTS[st.shot]||SHOTS.clear;
+  const dx=st.to.x-st.from.x, dy=st.to.y-st.from.y, dl=Math.hypot(dx,dy)||1;
+  const r=sh.reach||0.3;
+  return { x:st.from.x+dx/dl*r, y:st.from.y+dy/dl*r, z:sh.z0 };
+}
 // lift any net-crossing trajectory so it clears the real tape (1.55 m)
 function clearNet(tr){
   if((tr.y1<CT.NET)===(tr.y2<CT.NET)) return tr;
@@ -245,7 +259,8 @@ export function mountProCourt(container, opts){
     gid("routes").innerHTML = steps.map((st,i)=>{
       if(st.rec) return "";
       const sh=SHOTS[st.shot]||SHOTS.clear;
-      const tr=clearNet({x1:st.from.x,y1:st.from.y,x2:st.to.x,y2:st.to.y,z0:sh.z0,h:sh.h});
+      const cp=contactPoint(st);
+      const tr=clearNet({x1:cp.x,y1:cp.y,x2:st.to.x,y2:st.to.y,z0:sh.z0,h:sh.h});
       let d="",ok=true;
       for(let k=0;k<=22;k++){ const fp=flightPos(tr,k/22), p=proj(fp.x,fp.y,fp.z); if(!p){ok=false;break;} d+=(k?"L":"M")+p[0].toFixed(1)+" "+p[1].toFixed(1)+" "; }
       if(!ok) return "";
@@ -354,6 +369,7 @@ export function mountProCourt(container, opts){
       const side = st.from.y<CT.NET ? "A" : "B";
       const hitter = (st.hitter && P[st.hitter]) ? st.hitter : nearestOf(P, st.from.x, st.from.y, feed==="multi"?"A":side);
       if(!hitter){ segs.push([tEnd,tEnd,i]); return; }
+      const cp = contactPoint(st);   // racket contact point, not the body
       let contact, seg0;
       const chained = feed!=="multi" && prevFlight && dist2(prevFlight.to, st.from)<0.5;
       if(feed==="multi"){
@@ -364,7 +380,7 @@ export function mountProCourt(container, opts){
         const rt=FEEDRATE[meta.rate]||FEEDRATE.normal;
         const tFeed=lastContact ? lastContact+rt.gap : 0.15;
         contact=tFeed+rt.fd; seg0=tFeed;
-        flights.push({t0:tFeed,t1:contact,tr:clearNet({x1:meta.feeder.x,y1:meta.feeder.y,x2:st.from.x,y2:st.from.y,z0:1.15,z1:sh.z0,h:0.9}),feed:true,idx:i});
+        flights.push({t0:tFeed,t1:contact,tr:clearNet({x1:meta.feeder.x,y1:meta.feeder.y,x2:cp.x,y2:cp.y,z0:1.15,z1:cp.z,h:0.9}),feed:true,idx:i});
         movers.push({p:hitter,from:{...P[hitter]},to:{...st.from},t0:tFeed+0.05,t1:Math.max(tFeed+0.12,contact-0.04)});
         P[hitter]={...st.from};
         poses.push({p:"C",pose:"serve",t0:tFeed-0.12,t1:tFeed+0.3});
@@ -392,9 +408,11 @@ export function mountProCourt(container, opts){
       // touches the ground — it flies to the next player's contact height
       const nh=nextHit(i);
       const willChain = feed!=="multi" && nh && dist2(nh.from, st.to)<0.5;
-      const z1 = willChain ? (SHOTS[nh.shot]||SHOTS.clear).z0 : 0;
-      flights.push({t0:contact,t1:contact+sh.dur,tr:clearNet({x1:st.from.x,y1:st.from.y,x2:st.to.x,y2:st.to.y,z0:sh.z0,z1,h:sh.h}),idx:i,color:st.color});
-      fx.push({kind:"hit",t:contact,x:st.from.x,y:st.from.y,z:sh.z0});
+      // chained rallies fly racket-to-racket: this flight ends at the NEXT
+      // player's contact point, exactly where their shot will launch from
+      const ncp = willChain ? contactPoint(nh) : null;
+      flights.push({t0:contact,t1:contact+sh.dur,tr:clearNet({x1:cp.x,y1:cp.y,x2:ncp?ncp.x:st.to.x,y2:ncp?ncp.y:st.to.y,z0:sh.z0,z1:ncp?ncp.z:0,h:sh.h}),idx:i,color:st.color});
+      fx.push({kind:"hit",t:contact,x:cp.x,y:cp.y,z:cp.z});
       if(!willChain && feed!=="multi") fx.push({kind:"land",t:contact+sh.dur,x:st.to.x,y:st.to.y,out:st.out});
       // automatic rally habits in pure 1v1 (with squads the coach choreographs)
       if(oneVone){
