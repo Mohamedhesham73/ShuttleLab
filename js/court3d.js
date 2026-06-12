@@ -357,20 +357,18 @@ export function mountProCourt(container, opts){
       let contact, seg0;
       const chained = feed!=="multi" && prevFlight && dist2(prevFlight.to, st.from)<0.5;
       if(feed==="multi"){
-        // reposition while the feeder reloads, then strike the feed DIRECTLY —
-        // the feed arrives exactly at the player's contact point and height.
-        // Feed rate sets the rhythm; at Rapid the previous answer can still
-        // be airborne when the next feed launches (real multi-shuttle).
+        // SYNC: the feeder releases FIRST, and the player chases DURING the
+        // feed's flight — both arrive at the contact point together and the
+        // strike happens on arrival, no waiting. Feed rate sets the rhythm;
+        // at Rapid the previous answer can still be airborne.
         const rt=FEEDRATE[meta.rate]||FEEDRATE.normal;
-        const tSnap=Math.max(avail[hitter], lastContact?lastContact+rt.gap:0.1);
-        const gd=clamp(dist2(P[hitter],st.from)/6,0.05,0.4);
-        movers.push({p:hitter,from:{...P[hitter]},to:{...st.from},t0:tSnap,t1:tSnap+gd});
-        P[hitter]={...st.from};
-        const tFeed=tSnap+gd+0.12;
-        contact=tFeed+rt.fd; seg0=tSnap;
+        const tFeed=lastContact ? lastContact+rt.gap : 0.15;
+        contact=tFeed+rt.fd; seg0=tFeed;
         flights.push({t0:tFeed,t1:contact,tr:clearNet({x1:meta.feeder.x,y1:meta.feeder.y,x2:st.from.x,y2:st.from.y,z0:1.15,z1:sh.z0,h:0.9}),feed:true,idx:i});
+        movers.push({p:hitter,from:{...P[hitter]},to:{...st.from},t0:tFeed+0.05,t1:Math.max(tFeed+0.12,contact-0.04)});
+        P[hitter]={...st.from};
         poses.push({p:"C",pose:"serve",t0:tFeed-0.12,t1:tFeed+0.3});
-        poses.push({p:hitter,pose:sh.pose,t0:contact-0.25,t1:contact+0.2});
+        poses.push({p:hitter,pose:sh.pose,t0:contact-0.22,t1:contact+0.2});
       }else if(chained){
         // rally continuity: arrive DURING the incoming flight and take the
         // shuttle out of the air the instant it reaches the contact point
