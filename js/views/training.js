@@ -1,11 +1,10 @@
 import { state, esc, fmtDate } from "../core.js";
-import { USERS } from "../config.js";
 import { listenTraining, postTraining } from "../data.js";
 
 export function renderTraining(){
   const view = document.getElementById("view");
   const coach = state.role==="coach";
-  const roster = USERS.filter(u=>u.role!=="coach");
+  const roster = state.roster.filter(u=>u.role!=="coach");
   let listUnsub = null;
 
   view.innerHTML = `

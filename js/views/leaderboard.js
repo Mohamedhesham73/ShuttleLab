@@ -1,5 +1,5 @@
 import { state, esc, avatar, fmtDate } from "../core.js";
-import { TESTS, USERS } from "../config.js";
+import { TESTS } from "../config.js";
 import { listenAllMeasurements } from "../data.js";
 
 export function renderLeaderboard(){
@@ -29,7 +29,7 @@ export function renderLeaderboard(){
 
     const uids = Array.from(new Set(all.map(m=>String(m.uid))));
     let entries = uids.map(uid=>{
-      const u = USERS.find(x=>String(x.id)===String(uid));
+      const u = state.roster.find(x=>String(x.id)===String(uid));
       if(u && u.role==="coach") return null;          // leaderboard is for players
       const r = valueFor(uid);
       if(!r) return null;
@@ -41,7 +41,7 @@ export function renderLeaderboard(){
     entries.forEach((e,i)=>{ if(lastV===null || e.v!==lastV){ rank = i+1; lastV = e.v; } e.rank = rank; });
 
     const have = new Set(entries.map(e=>String(e.uid)));
-    const noData = USERS.filter(u=>u.role==="player" && !have.has(String(u.id)));
+    const noData = state.roster.filter(u=>u.role==="player" && !have.has(String(u.id)));
 
     const rows = entries.map(e=>{
       const me = String(e.uid)===String(state.user.id);

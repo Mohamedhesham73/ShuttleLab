@@ -1,12 +1,12 @@
 import { state, esc, r1, fmtDate, testById, avatar, navigate } from "../core.js";
-import { TESTS, USERS } from "../config.js";
+import { TESTS } from "../config.js";
 import { listenMeasurements, listenGoals, setGoal } from "../data.js";
 import { openReport } from "../report.js";
 
 export function renderDashboard(){
   const view = document.getElementById("view");
   const showBack = String(state.targetId) !== String(state.user.id);
-  const u = USERS.find(x=>String(x.id)===String(state.targetId));
+  const u = state.roster.find(x=>String(x.id)===String(state.targetId));
   const name = state.targetName || state.name;
 
   let sessions = [], goals = {}, loadedM = false, chart = null;

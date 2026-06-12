@@ -3,7 +3,11 @@ import { TESTS } from "./config.js";
 // Shared app state. _render is set by app.js to the main render function.
 export const state = {
   user:null, role:"player", name:"", view:"dash",
-  targetId:null, targetName:"", unsub:[], _render:null
+  targetId:null, targetName:"",
+  // The team roster, loaded from Firestore after login (see app.js).
+  // Shape per entry: { id, name, role, photo } — NO emails ship to the browser.
+  roster:[],
+  unsub:[], _render:null
 };
 
 export const r1 = (n)=>Math.round(n*10)/10;

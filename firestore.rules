@@ -1,0 +1,37 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    // Coach = role custom claim OR a known coach email (single-coach setup).
+    function isCoach() {
+      return request.auth != null && (
+        request.auth.token.role == 'coach' ||
+        request.auth.token.email == 'coach@shuttlelab.app'
+      );
+    }
+
+    // The team roster. Any signed-in user may READ it (the app needs names to
+    // show dashboards / leaderboard). Only the coach may change it. Emails are
+    // NOT stored here — only id, name, role, photo.
+    match /members/{id} {
+      allow read:  if signedIn();
+      allow write: if isCoach();
+    }
+
+    // Team-readable so the leaderboard / dashboards work.
+    match /measurements/{id} { allow read, write: if signedIn(); }
+    match /goals/{id}        { allow read, write: if signedIn(); }
+    match /drills/{id}       { allow read, write: if signedIn(); }
+
+    // Videos: only coaches create/delete/edit content.
+    // Players may update ONLY the watchedBy map (watched/done tracking).
+    match /videos/{id} {
+      allow read:   if signedIn();
+      allow create: if isCoach();
+      allow delete: if isCoach();
+      allow update: if isCoach()
+        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['watchedBy']);
+    }
+  }
+}

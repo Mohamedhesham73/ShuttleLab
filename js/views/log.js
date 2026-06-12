@@ -1,11 +1,11 @@
 import { state, esc, bestAvg, navigate } from "../core.js";
-import { TESTS, USERS } from "../config.js";
+import { TESTS } from "../config.js";
 import { saveMeasurement } from "../data.js";
 
 export function renderLog(){
   const view = document.getElementById("view");
   const today = new Date().toISOString().slice(0,10);
-  const roster = USERS.filter(u=>u.role!=="coach");
+  const roster = state.roster.filter(u=>u.role!=="coach");
 
   const inputs = TESTS.map(t=>{
     if(t.multi){

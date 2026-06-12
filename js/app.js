@@ -1,5 +1,6 @@
 import { state, clearUnsub } from "./core.js";
-import { watchAuth, userFromEmail, signOutUser } from "./auth.js";
+import { watchAuth, signOutUser } from "./auth.js";
+import { loadMembers } from "./data.js";
 import { header, wireShell } from "./shell.js";
 import { renderLogin } from "./views/login.js";
 import { renderDashboard } from "./views/dashboard.js";
@@ -35,10 +36,23 @@ state._render = renderApp;
 // Real auth gate. We render only after Firebase tells us who (if anyone) is
 // signed in. Firebase keeps the session in this browser, so refreshes stay
 // logged in — no manual localStorage handling needed.
-watchAuth((fbUser)=>{
+watchAuth(async (fbUser)=>{
   if(fbUser){
-    const u = userFromEmail(fbUser.email);
-    if(!u){ signOutUser(); return; }   // signed in, but not on the roster → reject
+    // Load the roster from Firestore (protected: only signed-in users can read it),
+    // then figure out who this account is by matching their Auth UID.
+    let members;
+    try{
+      members = await loadMembers();
+    }catch(e){
+      console.error("Couldn't load the team roster from Firestore:", e);
+      signOutUser(); return;
+    }
+    state.roster = members.map(m=>({ id:m.id, name:m.name, role:m.role, photo:m.photo }));
+
+    const me = members.find(m=>m.uid === fbUser.uid);
+    if(!me){ console.error("Signed-in account has no 'members' doc (UID "+fbUser.uid+")."); signOutUser(); return; }
+
+    const u = { id:me.id, name:me.name, role:me.role, photo:me.photo };
     const fresh = !state.user || String(state.user.id) !== String(u.id);
     state.user = u; state.role = u.role; state.name = u.name;
     state.targetId = String(u.id); state.targetName = u.name;
@@ -46,7 +60,7 @@ watchAuth((fbUser)=>{
     renderApp();
   }else{
     clearUnsub();
-    state.user = null;
+    state.user = null; state.roster = [];
     renderApp();
   }
 });

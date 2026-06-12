@@ -1,0 +1,10 @@
+{
+  "name": "shuttlelab",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.637.0",
+    "@aws-sdk/s3-request-presigner": "^3.637.0",
+    "firebase-admin": "^12.4.0"
+  }
+}

@@ -1,6 +1,6 @@
 import { state, esc } from "../core.js";
-import { USERS } from "../config.js";
-import { listenVideos, addVideo, updateVideo, deleteVideo, uploadVideoFile, markVideoWatched } from "../data.js";
+import { listenVideos, addVideo, updateVideo, deleteVideo, markVideoWatched, getPlaybackUrl } from "../data.js";
+import { uploadToR2 } from "../r2upload.js";
 
 // =============================================================
 //  MATCHES — the film-room.
@@ -18,7 +18,7 @@ const TYPES = ["Match", "Drill", "Multi-shuttle", "Other"];
 const DCOLS = ["#a4dd2b", "#ffd34d", "#ff5d6c", "#5db9ff", "#c77dff", "#ffffff"];
 const NOTE_HOLD = 2;          // seconds a note stays on screen
 const DW = 1000, DH = 562;    // drawing-overlay coordinate space (16:9)
-const players = () => USERS.filter(u => u.role === "player");
+const players = () => state.roster.filter(u => u.role === "player");
 
 function fmt(t){ t = t || 0; const m = Math.floor(t/60), s = Math.floor(t%60); return m + ":" + (s<10?"0":"") + s; }
 
@@ -131,17 +131,17 @@ export function renderMatches(){
         const prog = document.getElementById("vProg");
         const title = document.getElementById("vTitle").value.trim() || f.name.replace(/\.[^.]+$/, "");
         const type = document.getElementById("vType").value;
-        prog.style.display = "block"; prog.textContent = "Uploading… 0%";
+        prog.style.display = "block"; prog.textContent = "Preparing…";
         try{
-          const url = await uploadVideoFile(f, p => { prog.textContent = "Uploading… " + Math.round(p*100) + "%"; });
-          prog.textContent = "Finishing…";
-          const src = { kind: "url", url };
-          const ref = await addVideo({ title, type, source: src, markers: [], assignedTo: [], createdBy: String(state.user.id), ts: Date.now() });
+          const { key, url, hash, deduped } = await uploadToR2(f, { onProgress: p => { prog.textContent = "Uploading… " + Math.round(p*100) + "%"; } });
+          prog.textContent = deduped ? "Already uploaded — linking…" : "Finishing…";
+          const src = { kind: "r2", key, url: url || null };
+          const ref = await addVideo({ title, type, source: src, contentHash: hash, markers: [], assignedTo: [], createdBy: String(state.user.id), ts: Date.now() });
           form.style.display = "none"; prog.style.display = "none"; this.value = "";
           openVideo({ docId: ref.id, title, type, source: src, markers: [], assignedTo: [] });
         }catch(e){
           prog.style.display = "none";
-          errEl.textContent = "Upload failed: " + (e.message||e) + " — check that Storage is turned on in Firebase.";
+          errEl.textContent = "Upload failed: " + (e.message||e);
         }
       };
     }
@@ -150,7 +150,7 @@ export function renderMatches(){
   function assignLabel(v){
     if(v.assignedTo === "team") return "Shared with the whole team";
     if(Array.isArray(v.assignedTo) && v.assignedTo.length){
-      const names = v.assignedTo.map(id => { const u = USERS.find(x=>String(x.id)===String(id)); return u ? u.name : "?"; });
+      const names = v.assignedTo.map(id => { const u = state.roster.find(x=>String(x.id)===String(id)); return u ? u.name : "?"; });
       return "Sent to " + names.join(", ");
     }
     return coach ? "Not sent yet" : "";
@@ -178,7 +178,7 @@ export function renderMatches(){
     }
     const wb = v.watchedBy || {};
     const rows = ids.map(id=>{
-      const us = USERS.find(x=>String(x.id)===String(id));
+      const us = state.roster.find(x=>String(x.id)===String(id));
       const nm = us ? us.name : ("#"+id);
       const w = wb[id];
       const right = w
@@ -484,13 +484,18 @@ export function renderMatches(){
           return api;
         })();
       });
-    } else if(src && src.kind==="url"){
-      const v=document.createElement("video"); v.playsInline=true; v.setAttribute("webkit-playsinline",""); v.preload="metadata"; v.src=src.url;
-      v.style.cssText="width:100%;height:100%;object-fit:contain;background:#000;"; mount.appendChild(v);
-      media={ getTime:()=>v.currentTime||0, getDur:()=>(v.duration&&isFinite(v.duration))?v.duration:0, seek:t=>{ try{ v.currentTime=t; }catch(e){} }, play:()=>v.play(), pause:()=>v.pause(), setRate:r=>{ try{ v.playbackRate=r; }catch(e){} } };
-      v.addEventListener("loadedmetadata", onReady);
-      v.addEventListener("ended", ()=>pauseV());
-      v.addEventListener("error", ()=>{ const l=document.getElementById("flmLoad"); if(l){ l.textContent="Couldn't load this video link."; l.style.color="var(--down)"; } });
+    } else if(src && (src.kind==="url" || src.kind==="r2")){
+      const mountVideo = (url)=>{
+        if(!url){ const l=document.getElementById("flmLoad"); if(l){ l.textContent="Couldn't load this video."; l.style.color="var(--down)"; } return; }
+        const v=document.createElement("video"); v.playsInline=true; v.setAttribute("webkit-playsinline",""); v.preload="metadata"; v.src=url;
+        v.style.cssText="width:100%;height:100%;object-fit:contain;background:#000;"; mount.appendChild(v);
+        media={ getTime:()=>v.currentTime||0, getDur:()=>(v.duration&&isFinite(v.duration))?v.duration:0, seek:t=>{ try{ v.currentTime=t; }catch(e){} }, play:()=>v.play(), pause:()=>v.pause(), setRate:r=>{ try{ v.playbackRate=r; }catch(e){} } };
+        v.addEventListener("loadedmetadata", onReady);
+        v.addEventListener("ended", ()=>pauseV());
+        v.addEventListener("error", ()=>{ const l=document.getElementById("flmLoad"); if(l){ l.textContent="Couldn't load this video."; l.style.color="var(--down)"; } });
+      };
+      if(src.kind==="url"){ mountVideo(src.url); }
+      else { getPlaybackUrl(src).then(u=>{ if(document.body.contains(mount)) mountVideo(u); }).catch(()=>mountVideo(null)); }
     } else {
       const l=document.getElementById("flmLoad"); if(l){ l.textContent="No valid video link on this clip."; }
     }

@@ -1,5 +1,4 @@
 import { state, esc } from "../core.js";
-import { USERS } from "../config.js";
 import { listenDrills, addDrill, updateDrill, deleteDrill } from "../data.js";
 import { mountSideCourt } from "../sidecourt.js";
 import { mountSoloCourt } from "../solocourt.js";
@@ -12,7 +11,7 @@ const COURTS = [
   { kind:"solo", name:"Solo Court", blurb:"Top-down perspective — footwork & shot placement.", mount:mountSoloCourt }
 ];
 const courtBy = kind => COURTS.find(c=>c.kind===kind);
-const playersList = ()=> USERS.filter(u=>u.role==="player");
+const playersList = ()=> state.roster.filter(u=>u.role==="player");
 
 // "Send to" picker — value is "team" or an array of player ids.
 function makeAssign(initial){
@@ -44,7 +43,7 @@ function assignLabel(d){
   const a = d.assignedTo;
   if(a===undefined || a==="team") return "Whole team";
   if(Array.isArray(a) && a.length){
-    return "Sent to " + a.map(id=>{ const u=USERS.find(x=>String(x.id)===String(id)); return u?u.name:"?"; }).join(", ");
+    return "Sent to " + a.map(id=>{ const u=state.roster.find(x=>String(x.id)===String(id)); return u?u.name:"?"; }).join(", ");
   }
   return "Whole team";
 }

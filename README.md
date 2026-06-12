@@ -21,27 +21,23 @@ logo.png, cover.png   your branding
 ```
 
 ## 1. Set up the team
-Open `js/config.js` and edit the `USERS` list. Give each person a **fake** email
-and password (not their real Gmail). Set `role` to `"player"` or `"coach"`.
-You can also change the `TESTS` list there.
+The team roster lives in **Firestore** (the `members` collection), not in the code,
+so no names or emails ship to the browser. For each person:
+1. **Authentication → Users → Add user**: a **fake** email + password (not a real Gmail).
+2. Copy that user's **User UID**.
+3. **Firestore → `members` collection → Add document**, with the **Document ID = the UID**,
+   and fields: `id` (number), `name` (string), `role` (`"player"` or `"coach"`), `photo` (string, optional).
+
+You can change the `TESTS` list in `js/config.js`.
 
 ## 2. Set up the database (one time)
 1. In the Firebase console, open **Firestore Database** and create a database.
-2. Open the **Rules** tab, replace everything with this, and click **Publish**:
+2. Open the **Rules** tab, replace everything with the contents of the
+   **`firestore.rules`** file in this project, and click **Publish**.
 
-```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if true;
-    }
-  }
-}
-```
-
-(These open rules keep it simple. Anyone with the project could reach the data,
-but the logins are fake and it's only badminton stats — fine to tighten later.)
+These rules require a signed-in account for everything, lock video uploads to the
+coach, and let players only mark videos as watched. Don't use open
+(`allow read, write: if true`) rules — they let anyone reach the data.
 
 ## 3. Put it online (GitHub + Vercel)
 1. Create a new repository on GitHub and upload **all of these files** (keep the

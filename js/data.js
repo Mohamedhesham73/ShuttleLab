@@ -1,8 +1,17 @@
-import { db, storage } from "./firebase.js";
-import { collection, addDoc, doc, setDoc, deleteDoc, onSnapshot, query, where }
+import { db, storage, auth } from "./firebase.js";
+import { collection, addDoc, doc, setDoc, deleteDoc, onSnapshot, query, where, getDocs }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { ref, uploadBytesResumable, getDownloadURL }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
+
+// ---- Team roster (members) ----
+// The roster lives in Firestore so names/roles never ship inside the site's code.
+// Each doc's ID is the person's Firebase Auth UID; fields: { id, name, role, photo }.
+export async function loadMembers(){
+  const snap = await getDocs(collection(db,"members"));
+  const a = []; snap.forEach(d=>a.push({ uid:d.id, ...d.data() }));
+  return a;
+}
 
 // ---- Measurements ----
 export function listenMeasurements(uid, cb){
@@ -61,6 +70,7 @@ export function markVideoWatched(docId, playerId, info){
 }
 
 // Upload a video file to Firebase Storage; resolves with a streamable URL.
+// (Legacy — kept as a fallback. R2 upload now lives in js/r2upload.js.)
 // onProgress(fraction 0..1) is called as it uploads.
 export function uploadVideoFile(file, onProgress){
   const safe = (file.name || "video").replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -72,4 +82,29 @@ export function uploadVideoFile(file, onProgress){
       err=>reject(err),
       async ()=>{ try{ resolve(await getDownloadURL(task.snapshot.ref)); }catch(e){ reject(e); } });
   });
+}
+
+// ---- R2 video helpers ----
+// Find an already-uploaded video by its file fingerprint (dedupe).
+export async function findVideoByHash(hash){
+  const snap = await getDocs(query(collection(db,"videos"), where("contentHash","==",hash)));
+  let found = null; snap.forEach(d=>{ if(!found) found = { docId:d.id, ...d.data() }; });
+  return found;
+}
+
+// Resolve a playable URL for a video source.
+//  - public bucket: source.url is directly playable
+//  - private bucket: fetch a short-lived signed GET URL from our API
+export async function getPlaybackUrl(source){
+  if(!source) return null;
+  if(source.url && /^https?:\/\//.test(source.url)) return source.url;
+  if(source.kind === "r2" && source.key){
+    const user = auth.currentUser;
+    if(!user) throw new Error("Not signed in");
+    const token = await user.getIdToken();
+    const r = await fetch("/api/r2-play-url?key=" + encodeURIComponent(source.key), { headers:{ Authorization:"Bearer "+token } });
+    if(!r.ok) throw new Error("Couldn't get playback URL ("+r.status+")");
+    return (await r.json()).url;
+  }
+  return null;
 }

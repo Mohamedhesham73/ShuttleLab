@@ -1,10 +1,10 @@
 import { state, esc, navigate, avatar, testById } from "../core.js";
-import { USERS, TESTS } from "../config.js";
+import { TESTS } from "../config.js";
 import { listenAllMeasurements } from "../data.js";
 
 export function renderTeam(){
   const view = document.getElementById("view");
-  const roster = USERS.filter(u=>u.role!=="coach");
+  const roster = state.roster.filter(u=>u.role!=="coach");
   let board = TESTS[0].id;
   let latestByUid = {};
 
