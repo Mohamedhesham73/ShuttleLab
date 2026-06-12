@@ -3,6 +3,7 @@ import { listenDrills, addDrill, updateDrill, deleteDrill } from "../data.js";
 import { mountSideCourt } from "../sidecourt.js";
 import { mountSoloCourt } from "../solocourt.js";
 import { mountCourtLab } from "../courtlab.js";
+import { mountProCourt } from "../court3d.js";
 
 const CATS = ["Shots","Footwork","Strength","Conditioning","Tactics"];
 
@@ -19,6 +20,7 @@ const LAB_VIEWS = [["bird","Bird's-eye"],["side","Side view"],["front","Front vi
 const LAB_MODES = [["drill","Drills"],["multi","Multi-shuttle"]];
 const labLabel = c => {
   const f=(arr,k)=>{ const x=arr.find(a=>a[0]===k); return x?x[1]:k; };
+  if(c.kind==="pro3d") return "Singles · Pro 3D · "+f(LAB_MODES,c.mode||"drill");
   return f(LAB_CATS,c.category)+" · "+f(LAB_VIEWS,c.view||"bird")+" · "+f(LAB_MODES,c.mode||"drill");
 };
 const playersList = ()=> state.roster.filter(u=>u.role==="player");
@@ -90,9 +92,11 @@ export function renderLibrary(){
         <div class="disp" style="font-size:18px;margin-bottom:4px;">Court Lab</div>
         <div class="muted" style="font-size:13px;line-height:1.5;">A true-scale badminton court — official lines, real serve boxes, players that rotate like a real pair. Pick the game, the camera, and the training mode.</div>
         ${row("1 · DISCIPLINE", LAB_CATS, "category")}
-        ${row("2 · COURT VIEW", LAB_VIEWS, "view")}
-        ${row("3 · TRAINING MODE", LAB_MODES, "feed")}
-        <div class="muted" style="font-size:12px;margin-top:10px;line-height:1.5;">${lab.feed==="multi" ? "Multi-shuttle: a feeder throws shuttle after shuttle — you place each feed and the player's answer." : "Drills: build a rally shot by shot — both sides move and rotate automatically."}</div>
+        ${lab.category==="singles"
+          ? `<div class="muted" style="font-size:12px;margin:12px 0 0;line-height:1.6;">🎥 Singles uses the new <b style="color:var(--brand)">Pro 3D court</b> — Broadcast, Corner, Side and Bird's-eye cameras are built in. Switch angles any time, even mid-replay.</div>`
+          : row("2 · COURT VIEW", LAB_VIEWS, "view")}
+        ${row(lab.category==="singles" ? "2 · TRAINING MODE" : "3 · TRAINING MODE", LAB_MODES, "feed")}
+        <div class="muted" style="font-size:12px;margin-top:10px;line-height:1.5;">${lab.feed==="multi" ? "Multi-shuttle: a feeder throws shuttle after shuttle — you place each feed and the player's answer." : "Drills: build a rally shot by shot — players move and recover automatically."}</div>
         <button class="btn pri" id="labStart" style="width:100%;margin-top:14px;">Start building →</button>
         <div style="border-top:1px solid var(--line);margin-top:16px;padding-top:12px;">
           <div class="muted" style="font-size:12px;margin-bottom:8px;">Classic courts</div>
@@ -105,7 +109,7 @@ export function renderLibrary(){
     view.querySelectorAll("[data-lab]").forEach(el=>el.onclick=()=>{
       const [k,v]=el.dataset.lab.split(":"); screen.lab[k]=v; draw();
     });
-    document.getElementById("labStart").onclick = ()=>openBuild("lab", null, { ...screen.lab });
+    document.getElementById("labStart").onclick = ()=>openBuild(screen.lab.category==="singles" ? "pro3d" : "lab", null, { ...screen.lab });
     view.querySelectorAll("[data-pick]").forEach(el=>el.onclick=()=>openBuild(el.dataset.pick, null));
   };
 
@@ -113,11 +117,13 @@ export function renderLibrary(){
   const renderCourtScreen = ()=>{
     const { drill, mode } = screen;
     const kind = mode==="play" ? (drill.court && drill.court.kind) : screen.kind;
-    const isLab = kind === "lab";
-    const entry = isLab ? null : (courtBy(kind) || COURTS[0]);
-    const mountIt = (el, mountMode, points, labOpts)=> isLab
-      ? mountCourtLab(el, { mode:mountMode, points, category:labOpts.category, view:labOpts.view, feed:labOpts.feed })
-      : entry.mount(el, { mode:mountMode, points });
+    const isLab = kind === "lab", isPro = kind === "pro3d";
+    const entry = (isLab||isPro) ? null : (courtBy(kind) || COURTS[0]);
+    const mountIt = (el, mountMode, points, labOpts)=> isPro
+      ? mountProCourt(el, { mode:mountMode, points, feed:labOpts.feed })
+      : isLab
+        ? mountCourtLab(el, { mode:mountMode, points, category:labOpts.category, view:labOpts.view, feed:labOpts.feed })
+        : entry.mount(el, { mode:mountMode, points });
 
     if(mode === "play"){
       const c = drill.court || {};
@@ -126,7 +132,7 @@ export function renderLibrary(){
         <div class="card" style="padding:16px;">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
             <div class="disp" style="font-size:18px;">${esc(drill.title)}</div>
-            <span class="chip">${esc(isLab ? labLabel(c) : entry.name)}</span>
+            <span class="chip">${esc((isLab||isPro) ? labLabel(c) : entry.name)}</span>
           </div>
           <div id="ctMount"></div>
         </div>`;
@@ -137,7 +143,7 @@ export function renderLibrary(){
     }
 
     // build / edit
-    const lab = isLab ? (screen.lab || {
+    const lab = (isLab||isPro) ? (screen.lab || {
       category:(drill&&drill.court&&drill.court.category)||"singles",
       view:(drill&&drill.court&&drill.court.view)||"bird",
       feed:(drill&&drill.court&&drill.court.mode)||"drill"
@@ -148,7 +154,7 @@ export function renderLibrary(){
       <div class="card" style="padding:16px;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
           <div class="disp" style="font-size:18px;">${drill ? "Edit court drill" : "New court drill"}</div>
-          <span class="chip on">${esc(isLab ? labLabel({category:lab.category,view:lab.view,mode:lab.feed}) : entry.name)}</span>
+          <span class="chip on">${esc((isLab||isPro) ? labLabel({kind, category:lab.category,view:lab.view,mode:lab.feed}) : entry.name)}</span>
         </div>
         <input id="ctTitle" placeholder="Drill name (e.g. Attack: clear → drop → smash)" style="margin-bottom:12px;" value="${drill?esc(drill.title):""}">
         <div id="ctMount"></div>
@@ -168,9 +174,11 @@ export function renderLibrary(){
       const msg = document.getElementById("ctMsg");
       if(!title){ msg.style.color="var(--down)"; msg.textContent="Give the drill a name."; return; }
       if(!mounted.hasShots()){ msg.style.color="var(--down)"; msg.textContent="Add at least one shot first."; return; }
-      const court = isLab
-        ? { kind:"lab", category:lab.category, view:(mounted.getView?mounted.getView():lab.view), mode:lab.feed, points:mounted.getPoints() }
-        : { kind, points:mounted.getPoints() };
+      const court = isPro
+        ? { kind:"pro3d", category:"singles", mode:lab.feed, points:mounted.getPoints() }
+        : isLab
+          ? { kind:"lab", category:lab.category, view:(mounted.getView?mounted.getView():lab.view), mode:lab.feed, points:mounted.getPoints() }
+          : { kind, points:mounted.getPoints() };
       const payload = { title, category:"Court", court, assignedTo:assign.value(), ts:Date.now() };
       msg.style.color="var(--muted)"; msg.textContent="Saving…";
       try{
@@ -205,7 +213,7 @@ export function renderLibrary(){
       <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(230px,1fr));">
         ${shown.length?shown.map(d=>{
           const isCourt = !!d.court;
-          const cName = isCourt ? (d.court.kind==="lab" ? labLabel(d.court) : ((courtBy(d.court.kind)||{}).name || "Court")) : "";
+          const cName = isCourt ? ((d.court.kind==="lab"||d.court.kind==="pro3d") ? labLabel(d.court) : ((courtBy(d.court.kind)||{}).name || "Court")) : "";
           return `<div class="card fade" style="padding:16px;">
             <span class="chip on" style="display:inline-block;margin-bottom:8px;">${esc(d.category||(isCourt?"Court":"Drill"))}</span>
             ${isCourt?`<span class="chip" style="display:inline-block;margin:0 0 8px 6px;">${esc(cName)}</span>`:""}
