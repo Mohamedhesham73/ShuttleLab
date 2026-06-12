@@ -1,6 +1,6 @@
 import { state, esc, fmtDate } from "../core.js";
 import { TOURNAMENTS } from "../config.js";
-import { listenTraining, postTraining, listenPlan, getPlan, savePlan } from "../data.js";
+import { listenTraining, postTraining, listenPlan, getPlan, savePlan, listenSchedule, saveSchedule } from "../data.js";
 
 // ---- date helpers ----
 function d(iso){ try{ return new Date(iso+"T00:00:00"); }catch(e){ return null; } }
@@ -22,7 +22,6 @@ function whenLabel(t){
   if(ds<=14) return { txt:"In "+ds+" day"+(ds>1?"s":""), col:"var(--brand)" };
   return { txt:"In "+ds+" days", col:"var(--muted)" };
 }
-// soonest not-yet-finished tournament id (for the "next up" highlight)
 function nextId(list){
   let best=null;
   list.forEach(t=>{ if(daysUntil(t.end||t.start)>=0){ if(!best || daysUntil(t.start)<daysUntil(best.start)) best=t; } });
@@ -33,7 +32,8 @@ export function renderTraining(){
   const view = document.getElementById("view");
   const coach = state.role==="coach";
   const roster = state.roster.filter(u=>u.role!=="coach");
-  let msgUnsub = null;   // live messages listener (re-pointed when coach switches player)
+  let msgUnsub = null;          // live messages listener (re-pointed on player switch)
+  let TOURS = TOURNAMENTS;      // effective schedule (coach overrides, else code default)
 
   // ============================ PLAYER VIEW ============================
   if(!coach){
@@ -45,11 +45,13 @@ export function renderTraining(){
         <div id="msgList"><div class="muted">Loading…</div></div>
       </div>`;
 
+    let lastPlan = {};
+    const paint = ()=>{ const el=document.getElementById("planView"); if(el) el.innerHTML = planReadHTML(lastPlan, TOURS); };
     state.unsub.push(listenPlan(String(state.user.id), (plan, err)=>{
-      const el=document.getElementById("planView"); if(!el) return;
-      if(err){ el.innerHTML=`<div class="err">${esc(err.message)}</div>`; return; }
-      el.innerHTML = planReadHTML(plan||{});
+      if(err){ const el=document.getElementById("planView"); if(el) el.innerHTML=`<div class="err">${esc(err.message)}</div>`; return; }
+      lastPlan = plan||{}; paint();
     }));
+    state.unsub.push(listenSchedule(list=>{ TOURS = (list&&list.length)? list : TOURNAMENTS; paint(); }));
     startMessages(String(state.user.id));
     return;
   }
@@ -57,6 +59,7 @@ export function renderTraining(){
   // ============================ COACH VIEW ============================
   let curUid = roster[0] ? String(roster[0].id) : null;
   let plan = { target:"", blocks:[], tournaments:[] };
+  let editingSchedule = false;
 
   view.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
@@ -86,6 +89,12 @@ export function renderTraining(){
     }catch(e){ errEl.textContent="Couldn't post: "+(e.message||e); }
   };
 
+  // keep TOURS live; don't redraw while the coach is mid-edit of the schedule
+  state.unsub.push(listenSchedule(list=>{
+    TOURS = (list&&list.length)? list : TOURNAMENTS;
+    if(!editingSchedule && curUid) renderEdit();
+  }));
+
   async function selectPlayer(uid){
     document.getElementById("planEdit").innerHTML = `<div class="muted">Loading…</div>`;
     try{ plan = await getPlan(uid); }catch(e){ plan = {}; }
@@ -102,7 +111,6 @@ export function renderTraining(){
     const picked = new Set(plan.tournaments||[]);
 
     el.innerHTML = `
-      <!-- Season target -->
       <div class="card" style="padding:16px;margin-bottom:14px;">
         <div class="disp" style="font-size:15px;margin-bottom:8px;">🎯 Season target</div>
         <textarea id="tgtText" rows="3" placeholder="e.g. Reach beep level 11 · medal at U17 singles · sharper net play" style="resize:vertical;margin-bottom:10px;">${esc(plan.target||"")}</textarea>
@@ -110,7 +118,6 @@ export function renderTraining(){
         <span id="tgtMsg" class="muted" style="margin-left:10px;font-size:13px;"></span>
       </div>
 
-      <!-- Plan phases -->
       <div class="card" style="padding:16px;margin-bottom:14px;">
         <div class="disp" style="font-size:15px;margin-bottom:10px;">🗓️ Plan phases</div>
         <div id="blkList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">
@@ -135,25 +142,26 @@ export function renderTraining(){
         </div>
       </div>
 
-      <!-- Tournaments -->
       <div class="card" style="padding:16px;">
-        <div class="disp" style="font-size:15px;margin-bottom:4px;">🏆 Tournaments for this player</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:8px;">
+          <div class="disp" style="font-size:15px;">🏆 Tournaments for this player</div>
+          <button class="btn" id="schEditBtn" style="padding:5px 10px;font-size:12px;">✎ Edit schedule</button>
+        </div>
         <div class="muted" style="font-size:12px;margin-bottom:10px;">Tap a tournament to add it to this player's calendar.</div>
         <div style="display:flex;flex-direction:column;gap:7px;">
-          ${TOURNAMENTS.map(t=>{
+          ${TOURS.map(t=>{
             const on = picked.has(t.id);
-            return `<div data-tg="${t.id}" style="display:flex;gap:10px;align-items:center;border:1px solid ${on?"var(--brand)":"var(--line)"};border-radius:10px;padding:9px 11px;cursor:pointer;">
+            return `<div data-tg="${esc(t.id)}" style="display:flex;gap:10px;align-items:center;border:1px solid ${on?"var(--brand)":"var(--line)"};border-radius:10px;padding:9px 11px;cursor:pointer;">
               <span style="font-size:16px;">${on?"⭐":"☆"}</span>
               <div style="flex:1;">
                 <div class="disp" style="font-size:14px;">${esc(t.name)}</div>
-                <div class="muted" style="font-size:12px;">${esc(t.cats)} · ${esc(fmtRange(t.start,t.end))}</div>
+                <div class="muted" style="font-size:12px;">${esc(t.cats||"")} · ${esc(fmtRange(t.start,t.end))} · ${esc(t.place||"TBD")}</div>
               </div>
             </div>`;
           }).join("")}
         </div>
       </div>`;
 
-    // target save
     document.getElementById("tgtSave").onclick = async ()=>{
       syncTargetFromDOM();
       const m=document.getElementById("tgtMsg"); m.style.color="var(--muted)"; m.textContent="Saving…";
@@ -161,7 +169,6 @@ export function renderTraining(){
       catch(e){ m.style.color="var(--down)"; m.textContent="Couldn't save: "+(e.message||e); }
     };
 
-    // add phase
     document.getElementById("blkAdd").onclick = async ()=>{
       const start=document.getElementById("blkStart").value;
       const end=document.getElementById("blkEnd").value || start;
@@ -176,28 +183,92 @@ export function renderTraining(){
       catch(e){ errEl.textContent=" Couldn't save: "+(e.message||e); }
     };
 
-    // delete phase
     el.querySelectorAll("[data-del]").forEach(btn=>{
       btn.onclick = async ()=>{
         syncTargetFromDOM();
         plan.blocks = (plan.blocks||[]).filter(b=>String(b.id)!==String(btn.dataset.del));
-        try{ await savePlan(curUid, { blocks: plan.blocks }); renderEdit(); }
-        catch(e){ /* ignore */ }
+        try{ await savePlan(curUid, { blocks: plan.blocks }); renderEdit(); }catch(e){}
       };
     });
 
-    // toggle tournaments
     el.querySelectorAll("[data-tg]").forEach(row=>{
       row.onclick = async ()=>{
         syncTargetFromDOM();
-        const id=row.dataset.tg;
-        const set=new Set(plan.tournaments||[]);
+        const id=row.dataset.tg, set=new Set(plan.tournaments||[]);
         if(set.has(id)) set.delete(id); else set.add(id);
         plan.tournaments = Array.from(set);
-        try{ await savePlan(curUid, { tournaments: plan.tournaments }); renderEdit(); }
-        catch(e){ /* ignore */ }
+        try{ await savePlan(curUid, { tournaments: plan.tournaments }); renderEdit(); }catch(e){}
       };
     });
+
+    document.getElementById("schEditBtn").onclick = ()=>{ editingSchedule = true; renderScheduleEditor(); };
+  }
+
+  // ---- coach: edit the shared tournament schedule (venues/dates/etc.) ----
+  function renderScheduleEditor(){
+    const work = JSON.parse(JSON.stringify(TOURS));
+    const el = document.getElementById("planEdit");
+
+    const rowHTML = (t,i)=>`
+      <div data-row="${i}" style="border:1px solid var(--line);border-radius:10px;padding:11px;margin-bottom:10px;">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+          <input data-f="name" value="${esc(t.name||"")}" placeholder="Tournament name" style="flex:1;">
+          <button class="btn" data-rm style="padding:4px 9px;font-size:12px;color:var(--down);border-color:var(--down);">✕</button>
+        </div>
+        <input data-f="cats" value="${esc(t.cats||"")}" placeholder="Categories (e.g. Singles · Doubles · Mixed)" style="margin-bottom:8px;">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+          <div style="flex:1;min-width:120px;"><label style="font-size:12px;">Start</label><input type="date" data-f="start" value="${esc(t.start||"")}"></div>
+          <div style="flex:1;min-width:120px;"><label style="font-size:12px;">End</label><input type="date" data-f="end" value="${esc(t.end||"")}"></div>
+        </div>
+        <input data-f="place" value="${esc(t.place||"")}" placeholder="Venue (or TBD)">
+      </div>`;
+
+    el.innerHTML = `
+      <div class="card" style="padding:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px;">
+          <div class="disp" style="font-size:15px;">✎ Edit tournament schedule</div>
+          <button class="btn" id="schCancel" style="padding:5px 10px;font-size:12px;">Cancel</button>
+        </div>
+        <div class="muted" style="font-size:12px;margin-bottom:12px;">Changes here update the schedule for the whole team.</div>
+        <div id="schRows">${work.map((t,i)=>rowHTML(t,i)).join("")}</div>
+        <button class="btn" id="schAdd" style="margin-bottom:14px;">+ Add tournament</button>
+        <div style="border-top:1px solid var(--line);padding-top:12px;">
+          <button class="btn pri" id="schSave">Save schedule</button>
+          <span id="schMsg" class="muted" style="margin-left:10px;font-size:13px;"></span>
+        </div>
+      </div>`;
+
+    function wire(){
+      el.querySelectorAll("[data-row]").forEach(row=>{
+        const i = parseInt(row.dataset.row,10);
+        row.querySelectorAll("[data-f]").forEach(inp=>{ inp.oninput = ()=>{ work[i][inp.dataset.f] = inp.value; }; });
+        const rm = row.querySelector("[data-rm]");
+        if(rm) rm.onclick = ()=>{ work.splice(i,1); redraw(); };
+      });
+    }
+    function redraw(){ document.getElementById("schRows").innerHTML = work.map((t,i)=>rowHTML(t,i)).join(""); wire(); }
+    wire();
+
+    document.getElementById("schAdd").onclick = ()=>{
+      work.push({ id:"tc"+Date.now(), name:"", cats:"", start:"", end:"", place:"TBD" });
+      redraw();
+    };
+    document.getElementById("schCancel").onclick = ()=>{ editingSchedule = false; renderEdit(); };
+    document.getElementById("schSave").onclick = async ()=>{
+      const msg=document.getElementById("schMsg");
+      for(const t of work){
+        if(!(t.name||"").trim()){ msg.style.color="var(--down)"; msg.textContent="Every tournament needs a name."; return; }
+        if(!t.start){ msg.style.color="var(--down)"; msg.textContent="Every tournament needs a start date."; return; }
+        if(!t.end) t.end = t.start;
+      }
+      msg.style.color="var(--muted)"; msg.textContent="Saving…";
+      try{
+        await saveSchedule(work);
+        editingSchedule = false;
+        TOURS = work;
+        renderEdit();
+      }catch(e){ msg.style.color="var(--down)"; msg.textContent="Couldn't save: "+(e.message||e); }
+    };
   }
 
   selectPlayer(curUid);
@@ -219,10 +290,10 @@ export function renderTraining(){
 }
 
 // ---- player read-only render of the plan (target + phases + tournaments) ----
-function planReadHTML(plan){
+function planReadHTML(plan, tours){
   const target = plan.target ? esc(plan.target) : "";
   const blocks = (plan.blocks||[]).slice().sort((a,b)=>(a.start||"").localeCompare(b.start||""));
-  const myTours = TOURNAMENTS.filter(t=>(plan.tournaments||[]).includes(t.id)).slice().sort((a,b)=>a.start.localeCompare(b.start));
+  const myTours = (tours||[]).filter(t=>(plan.tournaments||[]).includes(t.id)).slice().sort((a,b)=>(a.start||"").localeCompare(b.start||""));
   const next = nextId(myTours);
 
   const targetCard = `<div class="card" style="padding:16px;margin-bottom:14px;border-left:3px solid var(--brand);">
@@ -251,7 +322,7 @@ function planReadHTML(plan){
       return `<div style="display:flex;gap:10px;align-items:center;border:1px solid ${isNext?"var(--brand)":"var(--line)"};border-radius:10px;padding:10px 12px;margin-bottom:8px;">
         <div style="flex:1;">
           <div class="disp" style="font-size:14px;">${esc(t.name)}${isNext?` <span class="chip on" style="font-size:10px;padding:1px 7px;">NEXT</span>`:""}</div>
-          <div class="muted" style="font-size:12px;">${esc(t.cats)} · ${esc(fmtRange(t.start,t.end))} · ${esc(t.place)}</div>
+          <div class="muted" style="font-size:12px;">${esc(t.cats||"")} · ${esc(fmtRange(t.start,t.end))} · ${esc(t.place||"TBD")}</div>
         </div>
         <div style="font-size:12px;color:${w.col};white-space:nowrap;">${esc(w.txt)}</div>
       </div>`;

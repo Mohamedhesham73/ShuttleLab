@@ -46,6 +46,15 @@ export async function getPlan(uid){
 }
 export function savePlan(uid, data){ return setDoc(doc(db,"plans",String(uid)), data, { merge:true }); }
 
+// Shared tournament schedule (coach-editable). Lives in a special plans doc so
+// it reuses the plans collection's rule. cb(list|null) — null = use code default.
+export function listenSchedule(cb){
+  return onSnapshot(doc(db,"plans","__schedule"),
+    d=>cb(d.exists() && Array.isArray(d.data().list) ? d.data().list : null),
+    err=>cb(null, err));
+}
+export function saveSchedule(list){ return setDoc(doc(db,"plans","__schedule"), { list }, { merge:true }); }
+
 // ---- Drill / shot library ----
 export function listenDrills(cb){
   return onSnapshot(collection(db,"drills"),
