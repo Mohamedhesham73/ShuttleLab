@@ -55,13 +55,13 @@ watchAuth(async (fbUser)=>{
 
     const u = { id:me.id, name:me.name, role:me.role, photo:me.photo };
     const fresh = !state.user || String(state.user.id) !== String(u.id);
-    state.user = u; state.role = u.role; state.name = u.name;
+    state.user = u; state.uid = fbUser.uid; state.role = u.role; state.name = u.name;
     state.targetId = String(u.id); state.targetName = u.name;
     if(fresh) state.view = u.role==="coach" ? "team" : "dash";
     renderApp();
   }else{
     clearUnsub();
-    state.user = null; state.roster = [];
+    state.user = null; state.uid = null; state.roster = [];
     renderApp();
   }
 });

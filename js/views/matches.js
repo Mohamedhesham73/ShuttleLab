@@ -121,7 +121,7 @@ export function renderMatches(opts){
       // A player's "My Videos" upload is tagged with submittedBy and auto-shared
       // back to themselves so the coach can find it and they can watch the notes.
       const ownerFields = myUploads
-        ? { submittedBy: String(state.user.id), assignedTo: [String(state.user.id)] }
+        ? { submittedBy: String(state.user.id), submittedUid: state.uid, assignedTo: [String(state.user.id)] }
         : { assignedTo: [] };
       document.getElementById("addVidBtn").onclick = ()=>{ form.style.display = form.style.display==="none" ? "block" : "none"; };
       document.getElementById("vSave").onclick = async ()=>{
@@ -293,12 +293,14 @@ export function renderMatches(opts){
         <div id="flmAssign" style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px;"></div>
         <button class="btn pri" id="flmSaveBtn">Save & send</button>
         <span id="flmSaveMsg" class="muted" style="margin-left:10px;font-size:13px;"></span>
-        <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px;">
-          <button class="btn" id="flmDelVid" style="color:var(--down);border-color:var(--down);">🗑 Delete video</button>
-          <span class="muted" style="margin-left:8px;font-size:12px;">Removes it for everyone.</span>
-        </div>
       </div>
       ${seenPanelHTML(work)}` : ``}
+
+      ${(coach || myUploads) ? `<div class="card" style="padding:14px;margin-top:16px;">
+        <button class="btn" id="flmDelVid" style="color:var(--down);border-color:var(--down);">🗑 Delete video</button>
+        <span class="muted" style="margin-left:8px;font-size:12px;">${myUploads ? "Removes your clip (your coach won't see it either)." : "Removes it for everyone."}</span>
+        <span id="flmDelMsg" class="err" style="display:block;margin-top:8px;"></span>
+      </div>` : ``}
     `;
 
     document.getElementById("backBtn").onclick = ()=>{ stopLoop(); current = null; renderList(); };
@@ -462,15 +464,21 @@ export function renderMatches(opts){
         }catch(e){ msg.style.color="var(--down)"; msg.textContent="Couldn't save: "+(e.message||e); }
       };
 
-      document.getElementById("flmDelVid").onclick=async ()=>{
-        if(!confirm("Delete “"+(work.title||"this video")+"”? This removes it for everyone and can't be undone.")) return;
-        const btn=document.getElementById("flmDelVid"); btn.disabled=true; btn.textContent="Deleting…";
+    }
+
+    // Delete video — coach (any clip) or player (their own upload only). The
+    // button only renders in those cases; the rule enforces ownership too.
+    const delBtn = document.getElementById("flmDelVid");
+    if(delBtn){
+      delBtn.onclick = async ()=>{
+        if(!confirm("Delete “"+(work.title||"this video")+"”? This can't be undone.")) return;
+        delBtn.disabled=true; delBtn.textContent="Deleting…";
         try{
           await deleteVideo(work.docId);
           stopLoop(); current=null; renderList();
         }catch(e){
-          btn.disabled=false; btn.textContent="🗑 Delete video";
-          const msg=document.getElementById("flmSaveMsg"); msg.style.color="var(--down)"; msg.textContent="Couldn't delete: "+(e.message||e);
+          delBtn.disabled=false; delBtn.textContent="🗑 Delete video";
+          const m=document.getElementById("flmDelMsg"); if(m) m.textContent="Couldn't delete: "+(e.message||e);
         }
       };
     }

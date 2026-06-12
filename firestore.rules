@@ -31,7 +31,9 @@ service cloud.firestore {
     match /videos/{id} {
       allow read:   if signedIn();
       allow create: if signedIn();
-      allow delete: if isCoach();
+      // Coach can delete any clip; a player can delete only one they uploaded.
+      allow delete: if isCoach()
+        || (signedIn() && resource.data.submittedUid == request.auth.uid);
       allow update: if isCoach()
         || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['watchedBy']);
     }

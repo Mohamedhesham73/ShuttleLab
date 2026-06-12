@@ -2,7 +2,7 @@ import { TESTS } from "./config.js";
 
 // Shared app state. _render is set by app.js to the main render function.
 export const state = {
-  user:null, role:"player", name:"", view:"dash",
+  user:null, uid:null, role:"player", name:"", view:"dash",
   targetId:null, targetName:"",
   // The team roster, loaded from Firestore after login (see app.js).
   // Shape per entry: { id, name, role, photo } — NO emails ship to the browser.
