@@ -12,6 +12,11 @@ export function r2(){
     credentials: {
       accessKeyId: process.env.R2_ACCESS_KEY_ID,
       secretAccessKey: process.env.R2_SECRET_ACCESS_KEY
-    }
+    },
+    // Newer AWS SDKs add an x-amz-checksum-crc32 to every request by default,
+    // which Cloudflare R2 rejects on presigned browser uploads (surfaces as a
+    // CORS error). Only send a checksum when an operation actually requires one.
+    requestChecksumCalculation: "WHEN_REQUIRED",
+    responseChecksumValidation: "WHEN_REQUIRED"
   });
 }
