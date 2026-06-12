@@ -2,15 +2,25 @@ import { state, esc } from "../core.js";
 import { listenDrills, addDrill, updateDrill, deleteDrill } from "../data.js";
 import { mountSideCourt } from "../sidecourt.js";
 import { mountSoloCourt } from "../solocourt.js";
+import { mountCourtLab } from "../courtlab.js";
 
 const CATS = ["Shots","Footwork","Strength","Conditioning","Tactics"];
 
-// Court registry — add a future court (Double / Mix / Drill) by adding ONE line.
+// Classic courts (locked mockup engines) — still open old saved drills.
 const COURTS = [
-  { kind:"side", name:"Side Court", blurb:"Side-on 3D view — see each shot's height & arc.", mount:mountSideCourt },
-  { kind:"solo", name:"Solo Court", blurb:"Top-down perspective — footwork & shot placement.", mount:mountSoloCourt }
+  { kind:"side", name:"Side Court (classic)", blurb:"Side-on 3D view — see each shot's height & arc.", mount:mountSideCourt },
+  { kind:"solo", name:"Solo Court (classic)", blurb:"Top-down perspective — footwork & shot placement.", mount:mountSoloCourt }
 ];
 const courtBy = kind => COURTS.find(c=>c.kind===kind);
+
+// Court Lab option labels (the new BWF-accurate engine).
+const LAB_CATS  = [["singles","Singles"],["doubles","Doubles"],["mixed","Mixed doubles"]];
+const LAB_VIEWS = [["bird","Bird's-eye"],["side","Side view"],["front","Front view"]];
+const LAB_MODES = [["drill","Drills"],["multi","Multi-shuttle"]];
+const labLabel = c => {
+  const f=(arr,k)=>{ const x=arr.find(a=>a[0]===k); return x?x[1]:k; };
+  return f(LAB_CATS,c.category)+" · "+f(LAB_VIEWS,c.view||"bird")+" · "+f(LAB_MODES,c.mode||"drill");
+};
 const playersList = ()=> state.roster.filter(u=>u.role==="player");
 
 // "Send to" picker — value is "team" or an array of player ids.
@@ -62,25 +72,40 @@ export function renderLibrary(){
 
   const destroyMount = ()=>{ if(mounted){ try{ mounted.destroy(); }catch(e){} mounted=null; } };
   const leaveCourt = ()=>{ destroyMount(); screen=null; draw(); };
-  const openPick  = ()=>{ screen={ mode:"pick" }; draw(); };
-  const openBuild = (kind, drill)=>{ screen={ mode:"build", kind, drill }; draw(); };
+  const openPick  = ()=>{ screen={ mode:"pick", lab:{ category:"singles", view:"bird", feed:"drill" } }; draw(); };
+  const openBuild = (kind, drill, lab)=>{ screen={ mode:"build", kind, drill, lab }; draw(); };
   const openPlay  = (drill)=>{ screen={ mode:"play", drill }; draw(); };
 
-  // ---------------- COURT PICKER ----------------
+  // ---------------- COURT PICKER (Court Lab hierarchy) ----------------
   const renderPick = ()=>{
+    const lab = screen.lab;
+    const row = (label, opts, key)=>`
+      <div class="muted" style="font-size:12px;margin:12px 0 6px;letter-spacing:.04em;">${label}</div>
+      <div style="display:flex;gap:7px;flex-wrap:wrap;">
+        ${opts.map(o=>`<span class="chip ${lab[key]===o[0]?"on":""}" data-lab="${key}:${o[0]}">${o[1]}</span>`).join("")}
+      </div>`;
     view.innerHTML = `
       <button class="btn" id="ctBack" style="margin-bottom:14px;padding:7px 12px;font-size:12px;">← Back to library</button>
       <div class="card" style="padding:18px;">
-        <div class="disp" style="font-size:18px;margin-bottom:4px;">Choose a court</div>
-        <div class="muted" style="font-size:13px;margin-bottom:14px;">More court types are coming — they'll show up here.</div>
-        <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr));">
-          ${COURTS.map(c=>`<button class="card" data-pick="${c.kind}" style="text-align:left;padding:16px;cursor:pointer;border:0.5px solid var(--line);">
-            <div class="disp" style="font-size:16px;margin-bottom:4px;">${esc(c.name)}</div>
-            <div class="muted" style="font-size:13px;line-height:1.5;">${esc(c.blurb)}</div>
-          </button>`).join("")}
+        <div class="disp" style="font-size:18px;margin-bottom:4px;">Court Lab</div>
+        <div class="muted" style="font-size:13px;line-height:1.5;">A true-scale badminton court — official lines, real serve boxes, players that rotate like a real pair. Pick the game, the camera, and the training mode.</div>
+        ${row("1 · DISCIPLINE", LAB_CATS, "category")}
+        ${row("2 · COURT VIEW", LAB_VIEWS, "view")}
+        ${row("3 · TRAINING MODE", LAB_MODES, "feed")}
+        <div class="muted" style="font-size:12px;margin-top:10px;line-height:1.5;">${lab.feed==="multi" ? "Multi-shuttle: a feeder throws shuttle after shuttle — you place each feed and the player's answer." : "Drills: build a rally shot by shot — both sides move and rotate automatically."}</div>
+        <button class="btn pri" id="labStart" style="width:100%;margin-top:14px;">Start building →</button>
+        <div style="border-top:1px solid var(--line);margin-top:16px;padding-top:12px;">
+          <div class="muted" style="font-size:12px;margin-bottom:8px;">Classic courts</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            ${COURTS.map(c=>`<button class="btn" data-pick="${c.kind}" style="padding:7px 12px;font-size:12px;">${esc(c.name)}</button>`).join("")}
+          </div>
         </div>
       </div>`;
     document.getElementById("ctBack").onclick = leaveCourt;
+    view.querySelectorAll("[data-lab]").forEach(el=>el.onclick=()=>{
+      const [k,v]=el.dataset.lab.split(":"); screen.lab[k]=v; draw();
+    });
+    document.getElementById("labStart").onclick = ()=>openBuild("lab", null, { ...screen.lab });
     view.querySelectorAll("[data-pick]").forEach(el=>el.onclick=()=>openBuild(el.dataset.pick, null));
   };
 
@@ -88,31 +113,42 @@ export function renderLibrary(){
   const renderCourtScreen = ()=>{
     const { drill, mode } = screen;
     const kind = mode==="play" ? (drill.court && drill.court.kind) : screen.kind;
-    const entry = courtBy(kind) || COURTS[0];
+    const isLab = kind === "lab";
+    const entry = isLab ? null : (courtBy(kind) || COURTS[0]);
+    const mountIt = (el, mountMode, points, labOpts)=> isLab
+      ? mountCourtLab(el, { mode:mountMode, points, category:labOpts.category, view:labOpts.view, feed:labOpts.feed })
+      : entry.mount(el, { mode:mountMode, points });
 
     if(mode === "play"){
+      const c = drill.court || {};
       view.innerHTML = `
         <button class="btn" id="ctBack" style="margin-bottom:14px;padding:7px 12px;font-size:12px;">← Back to library</button>
         <div class="card" style="padding:16px;">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
             <div class="disp" style="font-size:18px;">${esc(drill.title)}</div>
-            <span class="chip">${esc(entry.name)}</span>
+            <span class="chip">${esc(isLab ? labLabel(c) : entry.name)}</span>
           </div>
           <div id="ctMount"></div>
         </div>`;
       document.getElementById("ctBack").onclick = leaveCourt;
-      mounted = entry.mount(document.getElementById("ctMount"), { mode:"play", points: drill.court && drill.court.points });
+      mounted = mountIt(document.getElementById("ctMount"), "play", c.points,
+        { category:c.category||"singles", view:c.view||"bird", feed:c.mode||"drill" });
       return;
     }
 
     // build / edit
+    const lab = isLab ? (screen.lab || {
+      category:(drill&&drill.court&&drill.court.category)||"singles",
+      view:(drill&&drill.court&&drill.court.view)||"bird",
+      feed:(drill&&drill.court&&drill.court.mode)||"drill"
+    }) : null;
     const assign = makeAssign(drill ? drill.assignedTo : undefined);
     view.innerHTML = `
       <button class="btn" id="ctBack" style="margin-bottom:14px;padding:7px 12px;font-size:12px;">← Back to library</button>
       <div class="card" style="padding:16px;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
           <div class="disp" style="font-size:18px;">${drill ? "Edit court drill" : "New court drill"}</div>
-          <span class="chip on">${esc(entry.name)}</span>
+          <span class="chip on">${esc(isLab ? labLabel({category:lab.category,view:lab.view,mode:lab.feed}) : entry.name)}</span>
         </div>
         <input id="ctTitle" placeholder="Drill name (e.g. Attack: clear → drop → smash)" style="margin-bottom:12px;" value="${drill?esc(drill.title):""}">
         <div id="ctMount"></div>
@@ -126,13 +162,16 @@ export function renderLibrary(){
     document.getElementById("ctBack").onclick = leaveCourt;
     document.getElementById("ctCancel").onclick = leaveCourt;
     assign.wire(document.getElementById("ctAssign"));
-    mounted = entry.mount(document.getElementById("ctMount"), { mode:"edit", points: drill && drill.court && drill.court.points });
+    mounted = mountIt(document.getElementById("ctMount"), "edit", drill && drill.court && drill.court.points, lab||{});
     document.getElementById("ctSave").onclick = async ()=>{
       const title = document.getElementById("ctTitle").value.trim();
       const msg = document.getElementById("ctMsg");
       if(!title){ msg.style.color="var(--down)"; msg.textContent="Give the drill a name."; return; }
       if(!mounted.hasShots()){ msg.style.color="var(--down)"; msg.textContent="Add at least one shot first."; return; }
-      const payload = { title, category:"Court", court:{ kind, points:mounted.getPoints() }, assignedTo:assign.value(), ts:Date.now() };
+      const court = isLab
+        ? { kind:"lab", category:lab.category, view:(mounted.getView?mounted.getView():lab.view), mode:lab.feed, points:mounted.getPoints() }
+        : { kind, points:mounted.getPoints() };
+      const payload = { title, category:"Court", court, assignedTo:assign.value(), ts:Date.now() };
       msg.style.color="var(--muted)"; msg.textContent="Saving…";
       try{
         if(drill && drill.docId) await updateDrill(drill.docId, payload);
@@ -166,7 +205,7 @@ export function renderLibrary(){
       <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(230px,1fr));">
         ${shown.length?shown.map(d=>{
           const isCourt = !!d.court;
-          const cName = isCourt ? ((courtBy(d.court.kind)||{}).name || "Court") : "";
+          const cName = isCourt ? (d.court.kind==="lab" ? labLabel(d.court) : ((courtBy(d.court.kind)||{}).name || "Court")) : "";
           return `<div class="card fade" style="padding:16px;">
             <span class="chip on" style="display:inline-block;margin-bottom:8px;">${esc(d.category||(isCourt?"Court":"Drill"))}</span>
             ${isCourt?`<span class="chip" style="display:inline-block;margin:0 0 8px 6px;">${esc(cName)}</span>`:""}
