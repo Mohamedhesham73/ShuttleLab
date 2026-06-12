@@ -46,7 +46,29 @@ export function renderTraining(){
       </div>`;
 
     let lastPlan = {};
-    const paint = ()=>{ const el=document.getElementById("planView"); if(el) el.innerHTML = planReadHTML(lastPlan, TOURS); };
+    const val = id => { const e=document.getElementById(id); return e? e.value.trim() : ""; };
+    function wireTravel(){
+      const add = document.getElementById("trvAdd");
+      if(add) add.onclick = async ()=>{
+        const name=val("trvName"), start=val("trvStart"), end=val("trvEnd")||start, place=val("trvPlace");
+        const err=document.getElementById("trvErr"); if(err) err.textContent="";
+        if(!name){ if(err) err.textContent=" Name the tournament."; return; }
+        if(!start){ if(err) err.textContent=" Pick a start date."; return; }
+        const travel=(lastPlan.travel||[]).concat([{ id:"tr"+Date.now(), name, start, end, place:place||"Abroad" }]);
+        try{ await savePlan(String(state.user.id), { travel }); }catch(e){ if(err) err.textContent=" Couldn't save: "+(e.message||e); }
+      };
+      document.querySelectorAll("[data-trvdel]").forEach(b=>{
+        b.onclick = async ()=>{
+          const travel=(lastPlan.travel||[]).filter(t=>String(t.id)!==String(b.dataset.trvdel));
+          try{ await savePlan(String(state.user.id), { travel }); }catch(e){}
+        };
+      });
+    }
+    const paint = ()=>{
+      const el=document.getElementById("planView"); if(!el) return;
+      el.innerHTML = planReadHTML(lastPlan, TOURS) + travelEditHTML(lastPlan);
+      wireTravel();
+    };
     state.unsub.push(listenPlan(String(state.user.id), (plan, err)=>{
       if(err){ const el=document.getElementById("planView"); if(el) el.innerHTML=`<div class="err">${esc(err.message)}</div>`; return; }
       lastPlan = plan||{}; paint();
@@ -160,7 +182,16 @@ export function renderTraining(){
             </div>`;
           }).join("")}
         </div>
-      </div>`;
+      </div>
+
+      ${(plan.travel&&plan.travel.length) ? `<div class="card" style="padding:16px;margin-top:14px;border-left:3px solid var(--brand);">
+        <div class="disp" style="font-size:15px;margin-bottom:8px;">✈ Traveling abroad (added by the player)</div>
+        ${plan.travel.slice().sort((a,b)=>(a.start||"").localeCompare(b.start||"")).map(t=>`
+          <div style="border:1px solid var(--line);border-radius:10px;padding:9px 11px;margin-bottom:8px;">
+            <div class="disp" style="font-size:14px;">${esc(t.name)}</div>
+            <div class="muted" style="font-size:12px;">${esc(fmtRange(t.start,t.end))} · ${esc(t.place||"Abroad")}</div>
+          </div>`).join("")}
+      </div>` : ``}`;
 
     document.getElementById("tgtSave").onclick = async ()=>{
       syncTargetFromDOM();
@@ -293,7 +324,9 @@ export function renderTraining(){
 function planReadHTML(plan, tours){
   const target = plan.target ? esc(plan.target) : "";
   const blocks = (plan.blocks||[]).slice().sort((a,b)=>(a.start||"").localeCompare(b.start||""));
-  const myTours = (tours||[]).filter(t=>(plan.tournaments||[]).includes(t.id)).slice().sort((a,b)=>(a.start||"").localeCompare(b.start||""));
+  const curated = (tours||[]).filter(t=>(plan.tournaments||[]).includes(t.id)).map(t=>({ ...t, travel:false }));
+  const travel = (plan.travel||[]).map(t=>({ id:t.id, name:t.name, cats:"Abroad", start:t.start, end:t.end, place:t.place||"Abroad", travel:true }));
+  const myTours = curated.concat(travel).sort((a,b)=>(a.start||"").localeCompare(b.start||""));
   const next = nextId(myTours);
 
   const targetCard = `<div class="card" style="padding:16px;margin-bottom:14px;border-left:3px solid var(--brand);">
@@ -318,10 +351,10 @@ function planReadHTML(plan, tours){
   const tourCard = `<div class="card" style="padding:16px;">
     <div class="disp" style="font-size:15px;margin-bottom:10px;">🏆 Your tournaments</div>
     ${myTours.length ? myTours.map(t=>{
-      const w=whenLabel(t); const isNext = t.id===next;
-      return `<div style="display:flex;gap:10px;align-items:center;border:1px solid ${isNext?"var(--brand)":"var(--line)"};border-radius:10px;padding:10px 12px;margin-bottom:8px;">
+      const w=whenLabel(t); const isNext = t.id===next; const hl = isNext || t.travel;
+      return `<div style="display:flex;gap:10px;align-items:center;border:1px solid ${hl?"var(--brand)":"var(--line)"};border-radius:10px;padding:10px 12px;margin-bottom:8px;">
         <div style="flex:1;">
-          <div class="disp" style="font-size:14px;">${esc(t.name)}${isNext?` <span class="chip on" style="font-size:10px;padding:1px 7px;">NEXT</span>`:""}</div>
+          <div class="disp" style="font-size:14px;">${esc(t.name)}${t.travel?` <span class="chip on" style="font-size:10px;padding:1px 7px;">✈ TRAVEL</span>`:""}${isNext?` <span class="chip on" style="font-size:10px;padding:1px 7px;">NEXT</span>`:""}</div>
           <div class="muted" style="font-size:12px;">${esc(t.cats||"")} · ${esc(fmtRange(t.start,t.end))} · ${esc(t.place||"TBD")}</div>
         </div>
         <div style="font-size:12px;color:${w.col};white-space:nowrap;">${esc(w.txt)}</div>
@@ -330,4 +363,27 @@ function planReadHTML(plan, tours){
   </div>`;
 
   return targetCard + phaseCard + tourCard;
+}
+
+// ---- player: add/remove tournaments they're traveling to (abroad) ----
+function travelEditHTML(plan){
+  const trv = (plan.travel||[]).slice().sort((a,b)=>(a.start||"").localeCompare(b.start||""));
+  return `<div class="card" style="padding:16px;margin-top:14px;">
+    <div class="disp" style="font-size:15px;margin-bottom:4px;">✈ Traveling to a tournament?</div>
+    <div class="muted" style="font-size:12px;margin-bottom:10px;">Add tournaments you're playing abroad — your coach will see them on your calendar.</div>
+    ${trv.map(t=>`<div style="display:flex;gap:10px;align-items:center;border:1px solid var(--line);border-radius:10px;padding:9px 11px;margin-bottom:8px;">
+        <div style="flex:1;"><div class="disp" style="font-size:14px;">${esc(t.name)}</div>
+        <div class="muted" style="font-size:12px;">${esc(fmtRange(t.start,t.end))} · ${esc(t.place||"Abroad")}</div></div>
+        <button class="btn" data-trvdel="${esc(t.id)}" style="padding:4px 9px;font-size:12px;color:var(--down);border-color:var(--down);">Remove</button>
+      </div>`).join("")}
+    <div style="border-top:1px solid var(--line);padding-top:12px;margin-top:${trv.length?"4px":"0"};">
+      <input id="trvName" placeholder="Tournament name" style="margin-bottom:8px;">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+        <div style="flex:1;min-width:120px;"><label style="font-size:12px;">Start</label><input type="date" id="trvStart"></div>
+        <div style="flex:1;min-width:120px;"><label style="font-size:12px;">End</label><input type="date" id="trvEnd"></div>
+      </div>
+      <input id="trvPlace" placeholder="City / country (e.g. Dubai, UAE)" style="margin-bottom:8px;">
+      <button class="btn pri" id="trvAdd">Add to my calendar</button><span id="trvErr" class="err"></span>
+    </div>
+  </div>`;
 }

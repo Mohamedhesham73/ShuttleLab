@@ -106,7 +106,7 @@ export function renderDashboard(){
     view.innerHTML = `${back}
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
         ${title}
-        <button class="btn" id="pdfBtn"><span style="color:var(--brand)">⤓</span> Export PDF</button>
+        ${state.role==="coach" ? `<button class="btn" id="pdfBtn"><span style="color:var(--brand)">⤓</span> Export PDF</button>` : ``}
       </div>
       <div class="muted" style="font-size:13px;margin:6px 0 16px;">Last test ${fmtDate(latest.dateISO)} · ${sessions.length} session${sessions.length>1?"s":""}${pbHeadline}</div>
       ${compare}
@@ -122,7 +122,8 @@ export function renderDashboard(){
       ${goalsBlock}`;
 
     wireBack();
-    document.getElementById("pdfBtn").onclick = ()=>openReport(name, sessions, goals);
+    const pdfBtn = document.getElementById("pdfBtn");
+    if(pdfBtn) pdfBtn.onclick = ()=>openReport(name, sessions, goals);
     if(state.role==="coach"){
       document.getElementById("goalSet").onclick = ()=>{
         const tid = document.getElementById("goalTest").value;

@@ -45,20 +45,19 @@ function ytLoad(cb){
   document.head.appendChild(s);
 }
 
-export function renderMatches(opts){
-  opts = opts || {};
-  const myUploads = opts.mode === "myuploads";   // player's own "My Videos" page
+export function renderMatches(){
   const view = document.getElementById("view");
   const coach = state.role === "coach";
-  const canPost = coach || myUploads;            // who sees the upload form
   let videos = [];
   let current = null;   // open video docId (so live updates don't clobber the editor)
+  let sub = "coach";    // players only: "coach" (from coach) | "mine" (my uploads)
 
   // ---------- LIST SCREEN ----------
   function renderList(){
+    const myUploads = !coach && sub === "mine";    // upload + own-clips mode
+    const canPost = coach || myUploads;            // who sees the upload form
     let mine;
     if(myUploads){
-      // My Videos: only the clips this player uploaded.
       mine = videos.filter(v => String(v.submittedBy) === String(state.user.id));
     } else if(coach){
       mine = videos;
@@ -71,9 +70,14 @@ export function renderMatches(opts){
 
     view.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
-        <div class="logo-txt" style="font-size:20px;">${myUploads ? "My Videos" : "Film room"}</div>
+        <div class="logo-txt" style="font-size:20px;">${coach ? "Film room" : "Videos"}</div>
         ${canPost ? `<button class="btn pri" id="addVidBtn">+ Add video</button>` : ``}
       </div>
+
+      ${!coach ? `<div style="display:flex;gap:8px;margin-bottom:14px;">
+        <span class="chip ${sub==="coach"?"on":""}" data-sub="coach">From your coach</span>
+        <span class="chip ${sub==="mine"?"on":""}" data-sub="mine">My uploads</span>
+      </div>` : ``}
 
       ${myUploads ? `<div class="muted" style="font-size:13px;margin-bottom:14px;">Upload your match or training clips here. Your coach will analyse them and add notes you can watch back.</div>` : ``}
 
@@ -111,6 +115,10 @@ export function renderMatches(opts){
           </div>`).join("")
           : `<div class="muted">${myUploads ? "You haven't uploaded any clips yet — tap “+ Add video” to send your first one to the coach." : (coach ? "No videos yet — add the first one." : "Your coach hasn't shared any videos yet.")}</div>`}
       </div>`;
+
+    view.querySelectorAll("[data-sub]").forEach(el=>{
+      el.onclick = ()=>{ sub = el.dataset.sub; renderList(); };
+    });
 
     view.querySelectorAll("[data-open]").forEach(el=>{
       el.onclick = ()=>{ const v = videos.find(x=>x.docId===el.dataset.open); if(v) openVideo(v); };
@@ -226,6 +234,8 @@ export function renderMatches(opts){
     const work = JSON.parse(JSON.stringify(v));
     work.markers = work.markers || [];
     work.assignedTo = work.assignedTo || [];
+    // A player may delete a clip they uploaded (matched server-side by submittedUid).
+    const own = !coach && work.submittedUid && String(work.submittedUid) === String(state.uid);
 
     view.innerHTML = `
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
@@ -296,9 +306,9 @@ export function renderMatches(opts){
       </div>
       ${seenPanelHTML(work)}` : ``}
 
-      ${(coach || myUploads) ? `<div class="card" style="padding:14px;margin-top:16px;">
+      ${(coach || own) ? `<div class="card" style="padding:14px;margin-top:16px;">
         <button class="btn" id="flmDelVid" style="color:var(--down);border-color:var(--down);">🗑 Delete video</button>
-        <span class="muted" style="margin-left:8px;font-size:12px;">${myUploads ? "Removes your clip (your coach won't see it either)." : "Removes it for everyone."}</span>
+        <span class="muted" style="margin-left:8px;font-size:12px;">${own ? "Removes your clip (your coach won't see it either)." : "Removes it for everyone."}</span>
         <span id="flmDelMsg" class="err" style="display:block;margin-top:8px;"></span>
       </div>` : ``}
     `;
@@ -564,7 +574,3 @@ export function renderMatches(opts){
     if(!current) renderList();   // don't clobber an open editor
   }));
 }
-
-// Player's "My Videos" page — same film-room, but lists only their own uploads
-// and lets them upload new clips for the coach to analyse.
-export function renderMyVideos(){ return renderMatches({ mode: "myuploads" }); }
