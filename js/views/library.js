@@ -173,7 +173,7 @@ export function renderLibrary(){
       if(!title){ msg.style.color="var(--down)"; msg.textContent="Give the drill a name."; return; }
       if(!mounted.hasShots()){ msg.style.color="var(--down)"; msg.textContent="Add at least one shot first."; return; }
       const court = isPro
-        ? { kind:"pro3d", category:lab.category||"singles", mode:lab.feed, points:mounted.getPoints() }
+        ? { kind:"pro3d", category:lab.category||"singles", mode:lab.feed, points:mounted.getPoints(), dna:(mounted.getDNA?mounted.getDNA():null) }
         : isLab
           ? { kind:"lab", category:lab.category, view:(mounted.getView?mounted.getView():lab.view), mode:lab.feed, points:mounted.getPoints() }
           : { kind, points:mounted.getPoints() };
@@ -217,6 +217,7 @@ export function renderLibrary(){
             ${isCourt?`<span class="chip" style="display:inline-block;margin:0 0 8px 6px;">${esc(cName)}</span>`:""}
             <div class="disp" style="font-size:18px;margin-bottom:6px;">${esc(d.title)}</div>
             <div class="muted" style="font-size:14px;line-height:1.6;">${esc(d.desc||"")}</div>
+            ${(isCourt && d.court.dna && d.court.dna.shots) ? (()=>{ const n=d.court.dna; const col={Light:"#9aa49a",Moderate:"#ffd34d",High:"#ff9f45",Elite:"#ff5d6c"}[n.level]||"#9aa49a"; return `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px;align-items:center;"><span style="background:${col}22;color:${col};border:1px solid ${col};border-radius:20px;padding:2px 10px;font-size:11px;font-weight:600;">🧬 ${esc(n.level)}</span><span class="muted" style="font-size:12px;">${n.total} m · ${n.shots} shots · ${n.jumps} jumps</span></div>`; })() : ""}
             ${coach?`<div class="muted" style="font-size:12px;margin-top:8px;">${esc(assignLabel(d))}</div>`:""}
             ${isCourt?`<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
                 <button class="btn pri" data-openct="${esc(d.docId)}" style="padding:6px 12px;font-size:13px;">▶ Open court</button>

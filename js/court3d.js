@@ -220,6 +220,7 @@ export function mountProCourt(container, opts){
       <select id="${uid}spd" style="width:auto;"><option value="1.5">Fast</option><option value="1" selected>Normal</option><option value="0.5">Slow</option></select>
       <span id="${uid}hint" class="muted" style="font-size:12px;flex:1;min-width:140px;"></span>
     </div>
+    <div id="${uid}dna"></div>
     <div id="${uid}list" style="margin-top:10px;display:flex;flex-direction:column;gap:5px;"></div>`;
 
   let drawColor = DCOLS[0], pend = null, raf = null, playing = false;
@@ -671,9 +672,66 @@ export function mountProCourt(container, opts){
     afterStepsChange();
     hint("Added. Next shot, Move a player, or ▶ Play."+warn, !!warn);
   }
+  // ---------- Drill DNA: training load computed from the real timeline ----------
+  function computeDNA(){
+    const t = tl || compile();
+    const shots = steps.filter(s=>!s.rec);
+    const dist = {}; let sprints=0;
+    t.movers.forEach(m=>{
+      if(m.p==="C") return;
+      const d=Math.hypot(m.to.x-m.from.x, m.to.y-m.from.y);
+      dist[m.p]=(dist[m.p]||0)+d;
+      const dur=Math.max(0.05, m.t1-m.t0);
+      if(d>0.5 && d/dur>4.5) sprints++;
+    });
+    let smashes=0, jumps=0, lunges=0;
+    const zone={front:0,mid:0,rear:0};
+    shots.forEach(s=>{
+      const sh=SHOTS[s.shot]||SHOTS.clear;
+      if(s.shot==="smash"||s.shot==="jsmash"||s.shot==="halfsmash") smashes++;
+      if(sh.pose==="jump"||sh.pose==="hop") jumps++;
+      if(sh.pose==="lunge"||sh.pose==="defense") lunges++;
+      const depth = s.from.y<CT.NET ? s.from.y : (CT.L - s.from.y);
+      if(depth<2.0) zone.front++; else if(depth>4.7) zone.rear++; else zone.mid++;
+    });
+    const teamDist=p=>Object.keys(dist).filter(k=>k[0]===p).reduce((a,k)=>a+dist[k],0);
+    const aDist=teamDist("A"), bDist=teamDist("B"), total=aDist+bDist;
+    const mins=Math.max(0.15, t.total/60);
+    const focus = feed==="multi" ? aDist : Math.max(aDist,bDist);
+    const mpm = focus/mins;
+    const score = mpm + jumps*6 + sprints*3;
+    const level = score>180?"Elite": score>110?"High": score>55?"Moderate":"Light";
+    return { shots:shots.length, total:Math.round(total), aDist:Math.round(aDist), bDist:Math.round(bDist),
+             sprints, smashes, jumps, lunges, zone, dur:Math.round(t.total), mpm:Math.round(mpm), level };
+  }
+  function renderDNA(){
+    const el=gid("dna"); if(!el) return;
+    const d=computeDNA();
+    if(!d.shots){ el.innerHTML=""; return; }
+    const z=d.zone, zt=Math.max(1,z.front+z.mid+z.rear), pct=n=>Math.round(n/zt*100);
+    const col={Light:"#9aa49a",Moderate:"#ffd34d",High:"#ff9f45",Elite:"#ff5d6c"}[d.level];
+    const chip=(label,val)=>`<span style="background:#0c1410;border:1px solid var(--line);border-radius:8px;padding:4px 9px;font-size:12px;"><b style="color:#fff;">${val}</b> <span class="muted">${label}</span></span>`;
+    el.innerHTML=`<div class="card" style="padding:12px 13px;margin-top:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:9px;gap:8px;flex-wrap:wrap;">
+        <span class="disp" style="font-size:14px;">🧬 Drill DNA</span>
+        <span style="background:${col}22;color:${col};border:1px solid ${col};border-radius:20px;padding:2px 11px;font-size:12px;font-weight:600;">${d.level} intensity · ${d.dur}s</span>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:11px;">
+        ${chip("m run", d.total)}${chip("sprints", d.sprints)}${chip("jumps", d.jumps)}${chip("lunges", d.lunges)}${chip("smashes", d.smashes)}${chip("shots", d.shots)}
+      </div>
+      <div class="muted" style="font-size:11px;margin-bottom:4px;">Court coverage (where shots are played from)</div>
+      <div style="display:flex;height:13px;border-radius:7px;overflow:hidden;border:1px solid var(--line);">
+        <div style="width:${pct(z.front)}%;background:#5db9ff;"></div><div style="width:${pct(z.mid)}%;background:#a4dd2b;"></div><div style="width:${pct(z.rear)}%;background:#c77dff;"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;margin-top:3px;">
+        <span style="color:#5db9ff;">Front ${pct(z.front)}%</span><span style="color:#a4dd2b;">Mid ${pct(z.mid)}%</span><span style="color:#c77dff;">Rear ${pct(z.rear)}%</span>
+      </div>
+    </div>`;
+  }
+
   function afterStepsChange(){
     tl=compile(); pend=null; activeIdx=-1; stop();
-    renderStatic(); renderDynamic(tl.total); paintList(); showNote(-1);
+    renderStatic(); renderDynamic(tl.total); paintList(); showNote(-1); renderDNA();
   }
 
   // ---------- transport ----------
@@ -763,10 +821,11 @@ export function mountProCourt(container, opts){
     hint("Press ▶ Play — and try the camera angles while it runs.");
   }
   tl=compile();
-  renderStatic(); renderDynamic(tl.total||0); paintList();
+  renderStatic(); renderDynamic(tl.total||0); paintList(); renderDNA();
 
   return {
     getPoints: ()=> JSON.parse(JSON.stringify({ steps, feeder:meta.feeder, nA:meta.nA, nB:meta.nB, bases:meta.bases, rate:meta.rate })),
+    getDNA: ()=> computeDNA(),
     hasShots: ()=> steps.some(s=>!s.rec),
     getView: ()=> "broadcast",
     destroy: ()=> stop()
