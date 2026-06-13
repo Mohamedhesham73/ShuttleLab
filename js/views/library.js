@@ -1,5 +1,5 @@
 import { state, esc } from "../core.js";
-import { listenDrills, addDrill, updateDrill, deleteDrill } from "../data.js";
+import { listenDrills, addDrill, updateDrill, deleteDrill, getPrivate, savePrivate } from "../data.js";
 import { mountSideCourt } from "../sidecourt.js";
 import { mountSoloCourt } from "../solocourt.js";
 import { mountCourtLab } from "../courtlab.js";
@@ -77,6 +77,7 @@ export function renderLibrary(){
   const openPick  = ()=>{ screen={ mode:"pick", lab:{ category:"singles", view:"bird", feed:"drill" } }; draw(); };
   const openBuild = (kind, drill, lab)=>{ screen={ mode:"build", kind, drill, lab }; draw(); };
   const openPlay  = (drill)=>{ screen={ mode:"play", drill }; draw(); };
+  const openChallenge = (drill)=>{ screen={ mode:"challenge", drill }; draw(); };
 
   // ---------------- COURT PICKER (Court Lab hierarchy) ----------------
   const renderPick = ()=>{
@@ -114,7 +115,7 @@ export function renderLibrary(){
   // ---------------- COURT BUILD / WATCH ----------------
   const renderCourtScreen = ()=>{
     const { drill, mode } = screen;
-    const kind = mode==="play" ? (drill.court && drill.court.kind) : screen.kind;
+    const kind = (mode==="play"||mode==="challenge") ? (drill.court && drill.court.kind) : screen.kind;
     const isLab = kind === "lab", isPro = kind === "pro3d";
     const entry = (isLab||isPro) ? null : (courtBy(kind) || COURTS[0]);
     const mountIt = (el, mountMode, points, labOpts)=> isPro
@@ -137,6 +138,36 @@ export function renderLibrary(){
       document.getElementById("ctBack").onclick = leaveCourt;
       mounted = mountIt(document.getElementById("ctMount"), "play", c.points,
         { category:c.category||"singles", view:c.view||"bird", feed:c.mode||"drill" });
+      return;
+    }
+
+    if(mode === "challenge"){
+      const c = drill.court || {};
+      view.innerHTML = `
+        <button class="btn" id="ctBack" style="margin-bottom:14px;padding:7px 12px;font-size:12px;">← Back to library</button>
+        <div class="card" style="padding:16px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap;">
+            <div class="disp" style="font-size:18px;">🎮 ${esc(drill.title)}</div>
+            <span class="chip">${esc(labLabel(c))}</span>
+          </div>
+          <div class="muted" style="font-size:13px;margin-bottom:10px;">Read the play — tap where each shot should go <b>before</b> it's revealed. The closer to the coach's target, the more points. <span id="chBest"></span></div>
+          <div id="ctMount"></div>
+        </div>`;
+      document.getElementById("ctBack").onclick = leaveCourt;
+      // show personal best, then persist a new best on finish
+      getPrivate(state.uid).then(p=>{
+        const best=(p&&p.challenges&&p.challenges[drill.docId])||0;
+        const el=document.getElementById("chBest");
+        if(el && best) el.innerHTML = `Your best: <b style="color:var(--brand);">${best}%</b>`;
+      }).catch(()=>{});
+      const onScore = async (r)=>{
+        try{
+          const p=await getPrivate(state.uid);
+          const ch=(p&&p.challenges)||{};
+          if(!ch[drill.docId] || r.pct>ch[drill.docId]){ ch[drill.docId]=r.pct; await savePrivate(state.uid,{challenges:ch}); }
+        }catch(e){}
+      };
+      mounted = mountProCourt(document.getElementById("ctMount"), { mode:"play", challenge:true, points:c.points, feed:c.mode||"drill", category:c.category||"singles", onScore });
       return;
     }
 
@@ -221,6 +252,7 @@ export function renderLibrary(){
             ${coach?`<div class="muted" style="font-size:12px;margin-top:8px;">${esc(assignLabel(d))}</div>`:""}
             ${isCourt?`<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
                 <button class="btn pri" data-openct="${esc(d.docId)}" style="padding:6px 12px;font-size:13px;">▶ Open court</button>
+                ${d.court.kind==="pro3d"?`<button class="btn" data-playct="${esc(d.docId)}" style="padding:6px 11px;font-size:12px;">🎮 Play it</button>`:""}
                 ${coach?`<button class="btn" data-editct="${esc(d.docId)}" style="padding:6px 11px;font-size:12px;">Edit</button>
                 <button class="btn" data-delct="${esc(d.docId)}" style="padding:6px 11px;font-size:12px;">Delete</button>`:""}
               </div>`
@@ -231,6 +263,7 @@ export function renderLibrary(){
 
     view.querySelectorAll("[data-cat]").forEach(el=>el.onclick=()=>{ filter = el.dataset.cat; draw(); });
     view.querySelectorAll("[data-openct]").forEach(el=>el.onclick=()=>{ const d=drills.find(x=>x.docId===el.dataset.openct); if(d) openPlay(d); });
+    view.querySelectorAll("[data-playct]").forEach(el=>el.onclick=()=>{ const d=drills.find(x=>x.docId===el.dataset.playct); if(d) openChallenge(d); });
     view.querySelectorAll("[data-editct]").forEach(el=>el.onclick=()=>{ const d=drills.find(x=>x.docId===el.dataset.editct); if(d) openBuild(d.court&&d.court.kind, d); });
     view.querySelectorAll("[data-delct]").forEach(el=>el.onclick=async ()=>{ const id=el.dataset.delct; if(confirm("Delete this court drill?")){ try{ await deleteDrill(id); }catch(e){} } });
 

@@ -119,6 +119,7 @@ export function mountProCourt(container, opts){
   const editing = (opts.mode||"edit") !== "play";
   const feed = opts.feed || "drill";
   const cat = (opts.category==="doubles"||opts.category==="mixed") ? opts.category : "singles";
+  const challenge = !!opts.challenge && !editing;   // playable "read the shot" mode
   const uid = "pc"+Math.floor(Math.random()*1e6);
   const gid = s => container.querySelector("#"+uid+s);
 
@@ -181,7 +182,7 @@ export function mountProCourt(container, opts){
     <div style="display:flex;justify-content:center;background:linear-gradient(#0a1822,#0c1410);border:1px solid var(--line);border-radius:14px;overflow:hidden;">
       <svg id="${uid}svg" viewBox="0 0 ${VW} ${VH}" style="width:100%;height:auto;touch-action:manipulation;">
         <g id="${uid}floor"></g><g id="${uid}zone"></g><g id="${uid}routes"></g>
-        <g id="${uid}far"></g><g id="${uid}net"></g><g id="${uid}near"></g><g id="${uid}fx"></g>
+        <g id="${uid}far"></g><g id="${uid}net"></g><g id="${uid}near"></g><g id="${uid}fx"></g><g id="${uid}chfx"></g>
         <circle id="${uid}ring" r="8" fill="none" stroke="#fff" stroke-width="1.6" stroke-dasharray="3 3" opacity="0"/>
       </svg>
     </div>
@@ -214,6 +215,14 @@ export function mountProCourt(container, opts){
     </div>` : ``}
     <div id="${uid}pal" style="display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-top:8px;"><span class="muted" style="font-size:12px;">Colour</span></div>
     <input id="${uid}noteIn" type="text" placeholder="Coaching note for the last shot (optional)" style="width:100%;margin-top:8px;">` : ``}
+    ${challenge ? `
+    <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <button class="btn pri" id="${uid}chStart" style="padding:8px 16px;">▶ Start challenge</button>
+      <select id="${uid}spd" style="width:auto;"><option value="1.5">Fast</option><option value="1" selected>Normal</option><option value="0.5">Slow</option></select>
+      <span id="${uid}chScore" style="margin-left:auto;font-size:13px;color:var(--brand);font-weight:600;"></span>
+    </div>
+    <div id="${uid}hint" class="muted" style="font-size:13px;min-height:18px;margin-top:8px;text-align:center;"></div>
+    <div id="${uid}chResult"></div>` : `
     <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
       <button class="btn" id="${uid}play" style="padding:8px 14px;">▶ Play</button>
       <button class="btn" id="${uid}rst" style="padding:8px 12px;">↺</button>
@@ -221,7 +230,7 @@ export function mountProCourt(container, opts){
       <span id="${uid}hint" class="muted" style="font-size:12px;flex:1;min-width:140px;"></span>
     </div>
     <div id="${uid}dna"></div>
-    <div id="${uid}list" style="margin-top:10px;display:flex;flex-direction:column;gap:5px;"></div>`;
+    <div id="${uid}list" style="margin-top:10px;display:flex;flex-direction:column;gap:5px;"></div>`}`;
 
   let drawColor = DCOLS[0], pend = null, raf = null, playing = false;
   let tCur = 0, stopAt = 0, lastTs = 0, activeIdx = -1, loopT0 = 0;
@@ -268,7 +277,7 @@ export function mountProCourt(container, opts){
           const pts=[proj(b.x1,b.y1,0),proj(b.x2,b.y1,0),proj(b.x2,b.y2,0),proj(b.x1,b.y2,0)];
           return pts.every(Boolean) ? `<polygon points="${polyPts(pts)}" fill="rgba(164,221,43,.20)" stroke="#a4dd2b" stroke-width="1.4" stroke-dasharray="6 4"/>` : ""; })()
       : "";
-    gid("routes").innerHTML = steps.map((st,i)=>{
+    gid("routes").innerHTML = challenge ? "" : steps.map((st,i)=>{
       if(st.rec) return "";
       const sh=SHOTS[st.shot]||SHOTS.clear;
       const cp=contactPoint(st);
@@ -749,7 +758,7 @@ export function mountProCourt(container, opts){
   function playFrom(t0, t1){
     if(!tl || !tl.total) return;
     tCur=t0; stopAt=t1; loopT0=t0; lastTs=0; playing=true;
-    gid("play").textContent="❚❚ Pause";
+    const b=gid("play"); if(b) b.textContent="❚❚ Pause";
     raf=requestAnimationFrame(loop);
   }
   function previewSeg(i){
@@ -757,6 +766,74 @@ export function mountProCourt(container, opts){
     const seg=tl.segs.find(s=>s[2]===i); if(!seg) return;
     activeIdx=i; renderStatic(); markList(i); showNote(i);
     playFrom(seg[0], seg[1]);
+  }
+
+  // ---------- challenge: playable "read the shot" mode ----------
+  let ch=null;
+  const chShotList=()=> steps.map((s,i)=>({s,i})).filter(o=>!o.s.rec && (feed==="multi" || o.s.from.y<CT.NET));
+  const flightOf=(i)=> tl.flights.find(x=>x.idx===i && !x.feed);
+  function chScoreLbl(){ const el=gid("chScore"); if(el&&ch) el.textContent = ch.shots.length ? ("Shot "+Math.min(ch.pos+1,ch.shots.length)+"/"+ch.shots.length+" · "+ch.score+" pts") : ""; }
+  function chMarks(html){ const g=gid("chfx"); if(g) g.innerHTML=html||""; }
+  function chAnimTo(target, cb){
+    stop(); playing=true; lastTs=0;
+    const stepf=(ts)=>{
+      if(!playing) return;
+      if(!document.body.contains(gid("svg"))){ stop(); return; }
+      if(!lastTs) lastTs=ts;
+      tCur += (ts-lastTs)/1000*speed(); lastTs=ts;
+      if(tCur>=target){ tCur=target; renderDynamic(tCur); playing=false; if(cb) cb(); return; }
+      renderDynamic(tCur); raf=requestAnimationFrame(stepf);
+    };
+    raf=requestAnimationFrame(stepf);
+  }
+  function startChallenge(){
+    tl=compile();
+    ch={ shots:chShotList(), pos:0, score:0, phase:"run" };
+    const res=gid("chResult"); if(res) res.innerHTML="";
+    chMarks("");
+    if(!ch.shots.length){ hint("This drill has no player shots to read yet.", true); return; }
+    const b=gid("chStart"); if(b) b.textContent="↺ Restart";
+    tCur=0; activeIdx=-1; renderStatic(); renderDynamic(0); chScoreLbl();
+    chToShot();
+  }
+  function chToShot(){
+    if(!ch) return;
+    if(ch.pos>=ch.shots.length){ chFinish(); return; }
+    const fl=flightOf(ch.shots[ch.pos].i);
+    if(!fl){ ch.pos++; chToShot(); return; }
+    chScoreLbl();
+    chAnimTo(Math.max(tCur, fl.t0-0.04), ()=>{ ch.phase="await"; hint("👀 Read it — tap where this shot should go."); });
+  }
+  function chTap(c){
+    if(!ch || ch.phase!=="await") return;
+    const { s, i }=ch.shots[ch.pos];
+    const fl=flightOf(i);
+    const dist=Math.hypot(c.x-s.to.x, c.y-s.to.y);
+    const pts=Math.max(0, Math.round(100*(1-Math.min(1,dist/4))));
+    ch.score+=pts; ch.phase="reveal"; chScoreLbl();
+    const g=proj(c.x,c.y,0), tgt=proj(s.to.x,s.to.y,0);
+    const col = pts>=80?"#a4dd2b":pts>=45?"#ffd34d":"#ff5d6c";
+    let m="";
+    if(g) m+=`<circle cx="${g[0]}" cy="${g[1]}" r="10" fill="none" stroke="${col}" stroke-width="2.5"/><text x="${g[0]}" y="${(g[1]-13)}" font-size="14" fill="${col}" text-anchor="middle" font-weight="700">+${pts}</text>`;
+    if(tgt) m+=`<circle cx="${tgt[0]}" cy="${tgt[1]}" r="5.5" fill="#fff"/><text x="${tgt[0]}" y="${(tgt[1]+18)}" font-size="10" fill="#fff" text-anchor="middle">target</text>`;
+    chMarks(m);
+    hint(pts>=80?"Sharp read! 🎯":pts>=45?"Close — see the target.":"Watch where it actually went.");
+    setTimeout(()=>{ if(!ch) return; chAnimTo((fl.t1||tCur)+0.1, ()=>{ chMarks(""); ch.pos++; chToShot(); }); }, 900);
+  }
+  function chFinish(){
+    if(!ch) return;
+    ch.phase="done"; playing=false;
+    const max=ch.shots.length*100, pct=max?Math.round(ch.score/max*100):0;
+    const iq=60+Math.round(pct*0.8);
+    const tier=pct>=85?"Elite read":pct>=65?"Sharp eye":pct>=40?"Developing":"Keep training";
+    hint(""); chMarks("");
+    const res=gid("chResult");
+    if(res) res.innerHTML=`<div class="card" style="padding:16px;margin-top:10px;text-align:center;">
+      <div class="disp" style="font-size:17px;margin-bottom:4px;">${tier} — ${pct}%</div>
+      <div class="muted" style="font-size:13px;">Tactical IQ <b style="color:var(--brand);">${iq}</b> · ${ch.score} of ${max} points</div>
+    </div>`;
+    const b=gid("chStart"); if(b) b.textContent="▶ Play again";
+    if(opts.onScore){ try{ opts.onScore({ pct, score:ch.score, iq }); }catch(e){} }
   }
 
   // ---------- camera ----------
@@ -776,9 +853,11 @@ export function mountProCourt(container, opts){
 
   // ---------- wire ----------
   gid("svg").addEventListener("pointerdown", onTap);
+  if(challenge) gid("svg").addEventListener("pointerdown", e=>{ if(ch && ch.phase==="await"){ const c=svgXY(e); if(c) chTap(c); } });
   Object.keys(CAMS).forEach(k=>{ gid("cam_"+k).onclick=()=>setCam(k); });
-  gid("play").onclick=()=>{ if(playing){ stop(); } else if(tl && stopAt>0 && tCur<stopAt){ lastTs=0; playing=true; gid("play").textContent="❚❚ Pause"; raf=requestAnimationFrame(loop); } else { tCur=0; activeIdx=-1; playFrom(0, tl?tl.total:0); } };
-  gid("rst").onclick=()=>{ stop(); tCur=0; stopAt=0; activeIdx=-1; renderStatic(); renderDynamic(0); markList(-1); showNote(-1); };
+  const _chBtn=gid("chStart"); if(_chBtn) _chBtn.onclick=startChallenge;
+  const _play=gid("play"); if(_play) _play.onclick=()=>{ if(playing){ stop(); } else if(tl && stopAt>0 && tCur<stopAt){ lastTs=0; playing=true; gid("play").textContent="❚❚ Pause"; raf=requestAnimationFrame(loop); } else { tCur=0; activeIdx=-1; playFrom(0, tl?tl.total:0); } };
+  const _rst=gid("rst"); if(_rst) _rst.onclick=()=>{ stop(); tCur=0; stopAt=0; activeIdx=-1; renderStatic(); renderDynamic(0); markList(-1); showNote(-1); };
   if(editing){
     DCOLS.forEach(c=>{
       const b=document.createElement("button");
@@ -821,7 +900,8 @@ export function mountProCourt(container, opts){
     hint("Press ▶ Play — and try the camera angles while it runs.");
   }
   tl=compile();
-  renderStatic(); renderDynamic(tl.total||0); paintList(); renderDNA();
+  renderStatic(); renderDynamic(challenge?0:(tl.total||0)); paintList(); renderDNA();
+  if(challenge) hint("Press Start — read each shot and tap where it should go before it's revealed.");
 
   return {
     getPoints: ()=> JSON.parse(JSON.stringify({ steps, feeder:meta.feeder, nA:meta.nA, nB:meta.nB, bases:meta.bases, rate:meta.rate })),
