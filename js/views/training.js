@@ -28,6 +28,41 @@ function nextId(list){
   return best ? best.id : null;
 }
 
+// visual season timeline — phases as colour-coded bands, tournaments as flags,
+// a "today" line, all mapped onto one date axis (build/peak/taper periodisation).
+function phaseColor(title){ const s=(title||"").toLowerCase();
+  if(/base|build|prep/.test(s)) return "#5db9ff";
+  if(/peak|comp/.test(s)) return "#a4dd2b";
+  if(/taper/.test(s)) return "#ffd34d";
+  if(/recover|rest|off/.test(s)) return "#9aa49a";
+  return "#c77dff"; }
+function timelineHTML(plan, tours){
+  const blocks=(plan.blocks||[]).filter(b=>b.start);
+  const curated=(tours||[]).filter(t=>(plan.tournaments||[]).includes(t.id));
+  const tours2=curated.concat((plan.travel||[]).map(t=>({ ...t, travel:true })));
+  const dates=[]; blocks.forEach(b=>{ dates.push(+d(b.start)); if(b.end) dates.push(+d(b.end)); });
+  tours2.forEach(t=>{ dates.push(+d(t.start)); if(t.end) dates.push(+d(t.end)); });
+  if(dates.length<1) return "";
+  dates.push(Date.now());
+  let min=Math.min.apply(null,dates), max=Math.max.apply(null,dates);
+  const pad=(max-min)*0.06 || 86400000*3; min-=pad; max+=pad; const span=max-min||1;
+  const pct=ms=>((ms-min)/span*100);
+  const bars=blocks.map(b=>{ const x1=pct(+d(b.start)), x2=pct(+d(b.end||b.start)), w=Math.max(2.5,x2-x1), c=phaseColor(b.title);
+    return `<div title="${esc(b.title)}" style="position:absolute;left:${x1}%;width:${w}%;top:22px;height:22px;background:${c}33;border:1px solid ${c};border-radius:6px;overflow:hidden;"><span style="font-size:10px;color:${c};padding:1px 4px;white-space:nowrap;">${esc(b.title)}</span></div>`; }).join("");
+  const flags=tours2.map(t=>{ const x=pct(+d(t.start)); return `<div title="${esc(t.name)} · ${esc(fmtRange(t.start,t.end))}" style="position:absolute;left:${x}%;top:0;transform:translateX(-50%);">${t.travel?"✈":"🏆"}<div style="width:1px;height:48px;background:${t.travel?"#5dd0b1":"#ffd34d"};opacity:.55;margin:0 auto;"></div></div>`; }).join("");
+  const tx=pct(Date.now());
+  const lbl=ms=>new Date(ms).toLocaleDateString(undefined,{month:"short",year:"2-digit"});
+  return `<div class="card" style="padding:16px;margin-bottom:14px;">
+    <div class="disp" style="font-size:15px;margin-bottom:10px;">📅 Season timeline</div>
+    <div style="position:relative;height:66px;">
+      <div style="position:absolute;left:${tx}%;top:0;bottom:16px;width:2px;background:var(--brand);transform:translateX(-1px);"></div>
+      <div style="position:absolute;left:${tx}%;top:48px;transform:translateX(-50%);font-size:9px;color:var(--brand);">today</div>
+      ${flags}${bars}
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:10px;" class="muted"><span>${lbl(min)}</span><span>${lbl(max)}</span></div>
+  </div>`;
+}
+
 export function renderTraining(){
   const view = document.getElementById("view");
   const coach = state.role==="coach";
@@ -133,6 +168,7 @@ export function renderTraining(){
     const picked = new Set(plan.tournaments||[]);
 
     el.innerHTML = `
+      ${timelineHTML(plan, TOURS)}
       <div class="card" style="padding:16px;margin-bottom:14px;">
         <div class="disp" style="font-size:15px;margin-bottom:8px;">🎯 Season target</div>
         <textarea id="tgtText" rows="3" placeholder="e.g. Reach beep level 11 · medal at U17 singles · sharper net play" style="resize:vertical;margin-bottom:10px;">${esc(plan.target||"")}</textarea>
@@ -362,7 +398,7 @@ function planReadHTML(plan, tours){
     }).join("") : `<div class="muted" style="font-size:13px;">No tournaments added for you yet.</div>`}
   </div>`;
 
-  return targetCard + phaseCard + tourCard;
+  return targetCard + timelineHTML(plan, tours) + phaseCard + tourCard;
 }
 
 // ---- player: add/remove tournaments they're traveling to (abroad) ----
