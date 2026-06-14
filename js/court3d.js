@@ -120,6 +120,7 @@ export function mountProCourt(container, opts){
   const feed = opts.feed || "drill";
   const cat = (opts.category==="doubles"||opts.category==="mixed") ? opts.category : "singles";
   const challenge = !!opts.challenge && !editing;   // playable "read the shot" mode
+  const oncourt = !!opts.oncourt && !editing && !challenge;   // big display + feed metronome
   const uid = "pc"+Math.floor(Math.random()*1e6);
   const gid = s => container.querySelector("#"+uid+s);
 
@@ -215,7 +216,15 @@ export function mountProCourt(container, opts){
     </div>` : ``}
     <div id="${uid}pal" style="display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-top:8px;"><span class="muted" style="font-size:12px;">Colour</span></div>
     <input id="${uid}noteIn" type="text" placeholder="Coaching note for the last shot (optional)" style="width:100%;margin-top:8px;">` : ``}
-    ${challenge ? `
+    ${oncourt ? `
+    <div id="${uid}ocBanner" style="text-align:center;margin-top:12px;min-height:54px;"></div>
+    <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:center;">
+      <button class="btn pri" id="${uid}play" style="padding:13px 30px;font-size:18px;">▶ Play</button>
+      <button class="btn" id="${uid}rst" style="padding:13px 18px;font-size:16px;">↺</button>
+      <select id="${uid}spd" style="width:auto;font-size:15px;"><option value="1.5">Fast</option><option value="1" selected>Normal</option><option value="0.5">Slow</option></select>
+      <span class="chip on" id="${uid}beat">🔊 Beat</span>
+    </div>
+    <div id="${uid}hint" class="muted" style="font-size:13px;min-height:18px;margin-top:8px;text-align:center;"></div>` : challenge ? `
     <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
       <button class="btn pri" id="${uid}chStart" style="padding:8px 16px;">▶ Start challenge</button>
       <select id="${uid}spd" style="width:auto;"><option value="1.5">Fast</option><option value="1" selected>Normal</option><option value="0.5">Slow</option></select>
@@ -235,6 +244,7 @@ export function mountProCourt(container, opts){
   let drawColor = DCOLS[0], pend = null, raf = null, playing = false;
   let tCur = 0, stopAt = 0, lastTs = 0, activeIdx = -1, loopT0 = 0;
   let tl = null;
+  let beats = [], beatI = 0, beatOn = true, audioCtx = null;   // on-court metronome
   let mvSel = null, mvOn = false, fdOn = false;   // Move tool / Place-feeder tool
   let ssSel = null, ssOn = false;                 // Set-start tool (positions, not steps)
   let autoRot = true;                             // doubles 2v2 formation rotation
@@ -537,7 +547,7 @@ export function mountProCourt(container, opts){
     });
     if(shuttles && shuttles.length){
       const last=shuttles[shuttles.length-1];
-      if(tl && last.idx!==activeIdx){ activeIdx=last.idx; renderStatic(); markList(activeIdx); showNote(activeIdx); }
+      if(tl && last.idx!==activeIdx){ activeIdx=last.idx; renderStatic(); markList(activeIdx); showNote(activeIdx); if(oncourt) ocBanner(activeIdx); }
     }
     gid("far").innerHTML=far; gid("near").innerHTML=near;
     let fxs="";
@@ -743,6 +753,26 @@ export function mountProCourt(container, opts){
     renderStatic(); renderDynamic(tl.total); paintList(); showNote(-1); renderDNA();
   }
 
+  // ---------- on-court metronome ----------
+  function ensureAudio(){ try{ if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)(); if(audioCtx.state==="suspended") audioCtx.resume(); }catch(e){} }
+  function beep(){
+    if(!audioCtx) return;
+    try{
+      const o=audioCtx.createOscillator(), g=audioCtx.createGain(), t=audioCtx.currentTime;
+      o.type="sine"; o.frequency.value=920;
+      g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.3,t+0.008); g.gain.exponentialRampToValueAtTime(0.0001,t+0.11);
+      o.connect(g).connect(audioCtx.destination); o.start(t); o.stop(t+0.12);
+    }catch(e){}
+  }
+  function beepSchedule(){ return tl ? tl.flights.filter(f=> feed==="multi" ? f.feed : !f.feed).map(f=>f.t0).sort((a,b)=>a-b) : []; }
+  function ocBanner(i){
+    const b=gid("ocBanner"); if(!b) return;
+    const s=steps[i]; if(!s||s.rec) return;
+    const sh=SHOTS[s.shot]||{}, tot=steps.filter(x=>!x.rec).length;
+    const note=s.note?String(s.note).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])):"";
+    b.innerHTML=`<div style="font-size:12px;color:var(--muted);letter-spacing:.12em;">SHOT ${stepNo(i)} / ${tot}</div><div class="disp" style="font-size:30px;color:var(--brand);line-height:1.05;">${sh.name||""}</div>${note?`<div style="font-size:14px;color:#fff;margin-top:2px;">${note}</div>`:""}`;
+  }
+
   // ---------- transport ----------
   const speed=()=>parseFloat(gid("spd").value)||1;
   function stop(){ playing=false; if(raf) cancelAnimationFrame(raf); raf=null; const b=gid("play"); if(b) b.textContent="▶ Play"; }
@@ -751,13 +781,14 @@ export function mountProCourt(container, opts){
     if(!document.body.contains(gid("svg"))){ stop(); return; }
     if(!lastTs) lastTs=ts;
     tCur += (ts-lastTs)/1000*speed(); lastTs=ts;
-    if(tCur>=stopAt) tCur = loopT0-0.35;   // loop again and again until paused
+    if(oncourt && beatOn){ while(beatI<beats.length && beats[beatI]<=tCur){ beep(); beatI++; } }
+    if(tCur>=stopAt){ tCur = loopT0-0.35; beatI=0; }   // loop again and again until paused
     renderDynamic(Math.max(0,tCur));
     raf=requestAnimationFrame(loop);
   }
   function playFrom(t0, t1){
     if(!tl || !tl.total) return;
-    tCur=t0; stopAt=t1; loopT0=t0; lastTs=0; playing=true;
+    tCur=t0; stopAt=t1; loopT0=t0; lastTs=0; playing=true; beatI=0;
     const b=gid("play"); if(b) b.textContent="❚❚ Pause";
     raf=requestAnimationFrame(loop);
   }
@@ -856,7 +887,8 @@ export function mountProCourt(container, opts){
   if(challenge) gid("svg").addEventListener("pointerdown", e=>{ if(ch && ch.phase==="await"){ const c=svgXY(e); if(c) chTap(c); } });
   Object.keys(CAMS).forEach(k=>{ gid("cam_"+k).onclick=()=>setCam(k); });
   const _chBtn=gid("chStart"); if(_chBtn) _chBtn.onclick=startChallenge;
-  const _play=gid("play"); if(_play) _play.onclick=()=>{ if(playing){ stop(); } else if(tl && stopAt>0 && tCur<stopAt){ lastTs=0; playing=true; gid("play").textContent="❚❚ Pause"; raf=requestAnimationFrame(loop); } else { tCur=0; activeIdx=-1; playFrom(0, tl?tl.total:0); } };
+  const _play=gid("play"); if(_play) _play.onclick=()=>{ if(oncourt){ ensureAudio(); if(!playing) beats=beepSchedule(); } if(playing){ stop(); } else if(tl && stopAt>0 && tCur<stopAt){ lastTs=0; playing=true; gid("play").textContent="❚❚ Pause"; raf=requestAnimationFrame(loop); } else { tCur=0; activeIdx=-1; playFrom(0, tl?tl.total:0); } };
+  const _beat=gid("beat"); if(_beat) _beat.onclick=function(){ beatOn=!beatOn; this.classList.toggle("on",beatOn); ensureAudio(); };
   const _rst=gid("rst"); if(_rst) _rst.onclick=()=>{ stop(); tCur=0; stopAt=0; activeIdx=-1; renderStatic(); renderDynamic(0); markList(-1); showNote(-1); };
   if(editing){
     DCOLS.forEach(c=>{
@@ -900,8 +932,9 @@ export function mountProCourt(container, opts){
     hint("Press ▶ Play — and try the camera angles while it runs.");
   }
   tl=compile();
-  renderStatic(); renderDynamic(challenge?0:(tl.total||0)); paintList(); renderDNA();
+  renderStatic(); renderDynamic((challenge||oncourt)?0:(tl.total||0)); paintList(); renderDNA();
   if(challenge) hint("Press Start — read each shot and tap where it should go before it's revealed.");
+  if(oncourt){ beats=beepSchedule(); const first=steps.findIndex(s=>!s.rec); if(first>=0) ocBanner(first); hint(feed==="multi"?"Prop the phone up, press Play — the beat ticks each feed so your feeding matches the rhythm.":"Prop the phone up and press Play — the beat ticks each shot."); }
 
   return {
     getPoints: ()=> JSON.parse(JSON.stringify({ steps, feeder:meta.feeder, nA:meta.nA, nB:meta.nB, bases:meta.bases, rate:meta.rate })),
