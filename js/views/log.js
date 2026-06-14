@@ -14,7 +14,7 @@ export function renderLog(){
           ${[1,2,3].map(i=>`<input type="number" step="any" inputmode="decimal" placeholder="${i}" data-test="${t.id}" class="att" style="flex:1;min-width:70px;">`).join("")}
         </div></div>`;
     }
-    return `<div style="margin-bottom:14px;"><label>${t.name} (${t.unit})</label><input type="number" step="any" inputmode="decimal" placeholder="—" data-single="${t.id}"></div>`;
+    return `<div style="margin-bottom:14px;"><label>${t.name} (${t.unit})</label><input type="number" step="any" inputmode="decimal" placeholder="—" data-single="${t.id}">${t.id==="beep"?`<button class="btn" id="beepRun" type="button" style="margin-top:8px;padding:7px 12px;font-size:12px;">🔊 Run the beep test</button>`:""}</div>`;
   }).join("");
 
   const opts = (state.role==="coach")
@@ -31,6 +31,46 @@ export function renderLog(){
     <div id="logErr" class="err"></div>
     <button class="btn pri" id="saveBtn" style="width:100%;margin-top:8px;">Save session</button>
   </div>`;
+
+  // ---- built-in multistage (bleep) test player ----
+  const beepBtn = document.getElementById("beepRun");
+  if(beepBtn) beepBtn.onclick = ()=>{
+    const SH=[7,8,8,9,9,10,10,11,11,11,12,12,13,13,13,14,14,15,15,16,16];  // shuttles per level, L1..L21
+    let ctx; try{ ctx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){}
+    let level=0, shuttle=0, running=true, started=false, timer=null, count=5;
+    const wrap=document.createElement("div");
+    wrap.style.cssText="position:fixed;inset:0;z-index:9998;background:rgba(6,8,7,.95);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;";
+    wrap.innerHTML=`<div class="disp" style="font-size:14px;letter-spacing:.12em;color:var(--muted);">MULTISTAGE BEEP TEST</div>
+      <div id="bpLevel" class="num" style="font-size:64px;font-weight:800;color:var(--brand);line-height:1;">—</div>
+      <div id="bpInfo" class="muted" style="font-size:15px;">Get ready…</div>
+      <div class="muted" style="font-size:12px;max-width:300px;line-height:1.5;">Run the 20 m and be at the line on every beep. When you can't keep up, tap stop — your level is saved into the form.</div>
+      <button id="bpStop" class="btn pri" type="button" style="margin-top:8px;padding:12px 28px;font-size:16px;">Stop & save level</button>`;
+    document.getElementById("view").appendChild(wrap);
+    const gone=()=>!document.body.contains(wrap);
+    const beep=(f,d)=>{ if(!ctx)return; const o=ctx.createOscillator(),g=ctx.createGain(),t=ctx.currentTime; o.type="sine"; o.frequency.value=f; g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.4,t+0.01); g.gain.exponentialRampToValueAtTime(0.0001,t+(d||0.18)); o.connect(g).connect(ctx.destination); o.start(t); o.stop(t+(d||0.2)); };
+    const show=()=>{ const el=document.getElementById("bpLevel"), inf=document.getElementById("bpInfo"); if(el) el.textContent=level+1; if(inf) inf.textContent="Shuttle "+shuttle+" / "+SH[level]+" · "+(8+level*0.5).toFixed(1)+" km/h"; };
+    const nextShuttle=()=>{
+      if(!running) return; if(gone()){ stop(true); return; }
+      shuttle++;
+      if(shuttle>SH[level]){ level++; shuttle=1; if(level>=SH.length){ return stop(); } beep(1320,0.22); setTimeout(()=>beep(1320,0.22),150); }
+      else beep(900,0.16);
+      show();
+      timer=setTimeout(nextShuttle, (72/(8+level*0.5))*1000);
+    };
+    const tick=()=>{
+      if(!running) return; if(gone()){ stop(true); return; }
+      if(count>0){ const inf=document.getElementById("bpInfo"); if(inf) inf.textContent="Starting in "+count+"…"; beep(700,0.12); count--; timer=setTimeout(tick,1000); }
+      else { started=true; const inf=document.getElementById("bpInfo"); if(inf) inf.textContent="GO!"; beep(1100,0.3); level=0; shuttle=0; show(); timer=setTimeout(nextShuttle,(72/8)*1000); }
+    };
+    function stop(silent){
+      running=false; if(timer) clearTimeout(timer); timer=null;
+      if(!silent && started){ const inp=document.querySelector('[data-single="beep"]'); if(inp) inp.value=level+1; }
+      try{ if(ctx) ctx.close(); }catch(e){}
+      wrap.remove();
+    }
+    wrap.querySelector("#bpStop").onclick=()=>stop();
+    tick();
+  };
 
   document.getElementById("saveBtn").onclick = async ()=>{
     const errEl = document.getElementById("logErr"); errEl.textContent = "";
