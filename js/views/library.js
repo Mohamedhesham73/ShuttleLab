@@ -23,6 +23,14 @@ const labLabel = c => {
   if(c.kind==="pro3d") return (c.category==="mixed"?"Mixed doubles":c.category==="doubles"?"Doubles":"Singles")+" · Pro 3D · "+f(LAB_MODES,c.mode||"drill");
   return f(LAB_CATS,c.category)+" · "+f(LAB_VIEWS,c.view||"bird")+" · "+f(LAB_MODES,c.mode||"drill");
 };
+
+// Session = a bundle of drills; combine their Drill-DNA loads.
+const DNA_COL = { Light:"#9aa49a", Moderate:"#ffd34d", High:"#ff9f45", Elite:"#ff5d6c" };
+function combineDNA(ds){
+  let total=0,shots=0,jumps=0,sprints=0,lunges=0,smashes=0,dur=0,n=0;
+  (ds||[]).forEach(d=>{ const x=d&&d.court&&d.court.dna; if(!x) return; total+=x.total||0; shots+=x.shots||0; jumps+=x.jumps||0; sprints+=x.sprints||0; lunges+=x.lunges||0; smashes+=x.smashes||0; dur+=x.dur||0; n++; });
+  return { total,shots,jumps,sprints,lunges,smashes,dur,n, level: total>1200?"Elite": total>600?"High": total>250?"Moderate":"Light" };
+}
 const playersList = ()=> state.roster.filter(u=>u.role==="player");
 
 // "Send to" picker — value is "team" or an array of player ids.
@@ -79,6 +87,87 @@ export function renderLibrary(){
   const openPlay  = (drill)=>{ screen={ mode:"play", drill }; draw(); };
   const openChallenge = (drill)=>{ screen={ mode:"challenge", drill }; draw(); };
   const openOnCourt   = (drill)=>{ screen={ mode:"oncourt", drill }; draw(); };
+  const openSessionBuild = (sess)=>{ screen={ mode:"sessionbuild", sess:sess||null }; draw(); };
+  const openSession      = (sess)=>{ screen={ mode:"sessionview", sess }; draw(); };
+
+  // ---------------- SESSION BUILDER (bundle drills, sum the load) ----------------
+  const renderSessionBuild = ()=>{
+    const sess = screen.sess;
+    const courtDrills = drills.filter(d=>d.court && d.type!=="session");
+    if(!screen.chosen) screen.chosen = (sess && sess.drillIds) ? sess.drillIds.filter(id=>courtDrills.some(d=>d.docId===id)) : [];
+    const chosen = screen.chosen;
+    const assign = makeAssign(sess ? sess.assignedTo : undefined);
+    const sumCard = ()=>{ const items=chosen.map(id=>courtDrills.find(d=>d.docId===id)).filter(Boolean); const c=combineDNA(items); const col=DNA_COL[c.level];
+      return `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+        <span style="background:${col}22;color:${col};border:1px solid ${col};border-radius:20px;padding:3px 11px;font-size:12px;font-weight:700;">🧬 ${c.level}</span>
+        <span class="muted" style="font-size:13px;">${chosen.length} drill${chosen.length!==1?"s":""} · ${c.total} m · ${c.shots} shots · ${c.jumps} jumps · ~${c.dur}s court time</span></div>`; };
+    view.innerHTML = `
+      <button class="btn" id="ctBack" style="margin-bottom:14px;padding:7px 12px;font-size:12px;">← Back to library</button>
+      <div class="card" style="padding:16px;">
+        <div class="disp" style="font-size:18px;margin-bottom:10px;">${sess?"Edit session":"Build a session"}</div>
+        <input id="sTitle" placeholder="Session name (e.g. Tuesday — attack & footwork)" style="margin-bottom:12px;" value="${sess?esc(sess.title):""}">
+        <div class="muted" style="font-size:12px;margin-bottom:6px;">Tap drills to add them — the load adds up below.</div>
+        <div id="sList" style="display:flex;flex-direction:column;gap:7px;margin-bottom:12px;">
+          ${courtDrills.length?courtDrills.map(d=>{ const n=d.court.dna; const on=chosen.includes(d.docId);
+            return `<div data-pick="${esc(d.docId)}" style="display:flex;gap:10px;align-items:center;border:1px solid ${on?"var(--brand)":"var(--line)"};border-radius:10px;padding:9px 11px;cursor:pointer;">
+              <span style="font-size:16px;">${on?"✅":"⬜"}</span>
+              <div style="flex:1;"><div class="disp" style="font-size:15px;">${esc(d.title)}</div>
+              <div class="muted" style="font-size:12px;">${esc(labLabel(d.court))}${n?` · ${n.total} m · ${n.level}`:""}</div></div>
+            </div>`; }).join("") : `<div class="muted" style="font-size:13px;">No court drills yet — build a few in Court Lab first.</div>`}
+        </div>
+        <div class="card" style="padding:12px;margin-bottom:12px;"><div class="muted" style="font-size:12px;margin-bottom:6px;">Total session load</div><div id="sSum">${sumCard()}</div></div>
+        <div id="sAssign" style="margin-bottom:12px;">${assign.render()}</div>
+        <button class="btn pri" id="sSave">${sess?"Save changes":"Save session"}</button>
+        <button class="btn" id="sCancel" style="padding:8px 12px;margin-left:8px;">Cancel</button>
+        <span id="sMsg" class="muted" style="margin-left:8px;font-size:13px;"></span>
+      </div>`;
+    document.getElementById("ctBack").onclick = leaveCourt;
+    document.getElementById("sCancel").onclick = leaveCourt;
+    assign.wire(document.getElementById("sAssign"));
+    view.querySelectorAll("[data-pick]").forEach(row=>row.onclick=()=>{
+      const id=row.dataset.pick; const i=chosen.indexOf(id);
+      if(i>=0) chosen.splice(i,1); else chosen.push(id);
+      renderSessionBuild();   // re-render; selection persists on screen.chosen
+    });
+    document.getElementById("sSave").onclick = async ()=>{
+      const title=document.getElementById("sTitle").value.trim();
+      const msg=document.getElementById("sMsg");
+      if(!title){ msg.style.color="var(--down)"; msg.textContent="Name the session."; return; }
+      if(!chosen.length){ msg.style.color="var(--down)"; msg.textContent="Add at least one drill."; return; }
+      const payload={ type:"session", category:"Session", title, drillIds:chosen, assignedTo:assign.value(), ts:Date.now() };
+      msg.style.color="var(--muted)"; msg.textContent="Saving…";
+      try{ if(sess&&sess.docId) await updateDrill(sess.docId,payload); else await addDrill(payload); leaveCourt(); }
+      catch(e){ msg.style.color="var(--down)"; msg.textContent="Couldn't save: "+(e.message||e); }
+    };
+  };
+
+  // ---------------- SESSION VIEW ----------------
+  const renderSessionView = ()=>{
+    const sess = screen.sess;
+    const items = (sess.drillIds||[]).map(id=>drills.find(d=>d.docId===id)).filter(Boolean);
+    const c = combineDNA(items), col = DNA_COL[c.level];
+    view.innerHTML = `
+      <button class="btn" id="ctBack" style="margin-bottom:14px;padding:7px 12px;font-size:12px;">← Back to library</button>
+      <div class="card" style="padding:18px;">
+        <div class="disp" style="font-size:20px;margin-bottom:4px;">🗂️ ${esc(sess.title)}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:14px;">
+          <span style="background:${col}22;color:${col};border:1px solid ${col};border-radius:20px;padding:3px 11px;font-size:12px;font-weight:700;">🧬 ${c.level} session</span>
+          <span class="muted" style="font-size:13px;">${items.length} drills · ${c.total} m · ${c.jumps} jumps · ${c.smashes} smashes · ~${Math.round(c.dur/60*10)/10} min court time</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          ${items.length?items.map((d,i)=>{ const n=d.court&&d.court.dna; return `<div style="border:1px solid var(--line);border-radius:10px;padding:11px 13px;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><span class="num" style="color:var(--brand);font-weight:700;">${i+1}.</span><div class="disp" style="font-size:16px;flex:1;">${esc(d.title)}</div>${n?`<span style="font-size:11px;color:${DNA_COL[n.level]};">${n.level}</span>`:""}</div>
+            <div style="display:flex;gap:8px;margin-top:9px;flex-wrap:wrap;">
+              <button class="btn pri" data-openct="${esc(d.docId)}" style="padding:5px 11px;font-size:12px;">▶ Open</button>
+              ${d.court&&d.court.kind==="pro3d"?`<button class="btn" data-playct="${esc(d.docId)}" style="padding:5px 11px;font-size:12px;">🎮 Play</button><button class="btn" data-occt="${esc(d.docId)}" style="padding:5px 11px;font-size:12px;">📋 On court</button>`:""}
+            </div></div>`; }).join("") : `<div class="muted">The drills in this session were removed.</div>`}
+        </div>
+      </div>`;
+    document.getElementById("ctBack").onclick = leaveCourt;
+    view.querySelectorAll("[data-openct]").forEach(el=>el.onclick=()=>{ const d=drills.find(x=>x.docId===el.dataset.openct); if(d) openPlay(d); });
+    view.querySelectorAll("[data-playct]").forEach(el=>el.onclick=()=>{ const d=drills.find(x=>x.docId===el.dataset.playct); if(d) openChallenge(d); });
+    view.querySelectorAll("[data-occt]").forEach(el=>el.onclick=()=>{ const d=drills.find(x=>x.docId===el.dataset.occt); if(d) openOnCourt(d); });
+  };
 
   // ---------------- COURT PICKER (Court Lab hierarchy) ----------------
   const renderPick = ()=>{
@@ -237,10 +326,24 @@ export function renderLibrary(){
   };
 
   // ---------------- LIBRARY LIST ----------------
+  const sessionCard = s => { const its=(s.drillIds||[]).map(id=>drills.find(d=>d.docId===id)).filter(Boolean); const c=combineDNA(its); const col=DNA_COL[c.level];
+    return `<div class="card fade" style="padding:16px;">
+      <div class="disp" style="font-size:17px;margin-bottom:4px;">🗂️ ${esc(s.title)}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:6px 0;">
+        <span style="background:${col}22;color:${col};border:1px solid ${col};border-radius:20px;padding:2px 9px;font-size:11px;font-weight:600;">${c.level}</span>
+        <span class="muted" style="font-size:12px;">${its.length} drills · ${c.total} m</span></div>
+      ${coach?`<div class="muted" style="font-size:12px;margin-bottom:8px;">${esc(assignLabel(s))}</div>`:""}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn pri" data-opensess="${esc(s.docId)}" style="padding:5px 11px;font-size:12px;">Open session</button>
+        ${coach?`<button class="btn" data-editsess="${esc(s.docId)}" style="padding:5px 11px;font-size:12px;">Edit</button><button class="btn" data-delsess="${esc(s.docId)}" style="padding:5px 11px;font-size:12px;">Delete</button>`:""}
+      </div></div>`; };
+
   const renderList = ()=>{
     const mine = drills.filter(visibleTo);
-    const cats = ["All", ...Array.from(new Set(mine.map(d=>d.category).filter(Boolean)))];
-    const shown = mine.filter(d=>filter==="All" || d.category===filter);
+    const sessions = mine.filter(d=>d.type==="session");
+    const items = mine.filter(d=>d.type!=="session");
+    const cats = ["All", ...Array.from(new Set(items.map(d=>d.category).filter(Boolean)))];
+    const shown = items.filter(d=>filter==="All" || d.category===filter);
     const textAssign = makeAssign(undefined);
     view.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
@@ -256,6 +359,13 @@ export function renderLibrary(){
         <input id="dVideo" placeholder="Video link (optional)" style="margin-bottom:10px;">
         <div id="dAssign" style="margin-bottom:12px;">${textAssign.render()}</div>
         <button class="btn pri" id="dSave">Save to library</button><div id="dErr" class="err"></div>
+      </div>`:""}
+      ${(sessions.length||coach)?`<div style="margin-bottom:18px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap;">
+          <div class="disp" style="font-size:16px;">🗂️ Sessions</div>
+          ${coach?`<button class="btn" id="addSessBtn" style="padding:6px 12px;font-size:12px;">+ Build session</button>`:""}
+        </div>
+        ${sessions.length?`<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(230px,1fr));">${sessions.map(sessionCard).join("")}</div>`:`<div class="muted" style="font-size:13px;">Bundle several drills into one training session — it sums the total load.</div>`}
       </div>`:""}
       <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(230px,1fr));">
         ${shown.length?shown.map(d=>{
@@ -286,6 +396,10 @@ export function renderLibrary(){
     view.querySelectorAll("[data-occt]").forEach(el=>el.onclick=()=>{ const d=drills.find(x=>x.docId===el.dataset.occt); if(d) openOnCourt(d); });
     view.querySelectorAll("[data-editct]").forEach(el=>el.onclick=()=>{ const d=drills.find(x=>x.docId===el.dataset.editct); if(d) openBuild(d.court&&d.court.kind, d); });
     view.querySelectorAll("[data-delct]").forEach(el=>el.onclick=async ()=>{ const id=el.dataset.delct; if(confirm("Delete this court drill?")){ try{ await deleteDrill(id); }catch(e){} } });
+    const addSessB=document.getElementById("addSessBtn"); if(addSessB) addSessB.onclick=()=>openSessionBuild(null);
+    view.querySelectorAll("[data-opensess]").forEach(el=>el.onclick=()=>{ const s=drills.find(x=>x.docId===el.dataset.opensess); if(s) openSession(s); });
+    view.querySelectorAll("[data-editsess]").forEach(el=>el.onclick=()=>{ const s=drills.find(x=>x.docId===el.dataset.editsess); if(s) openSessionBuild(s); });
+    view.querySelectorAll("[data-delsess]").forEach(el=>el.onclick=async ()=>{ const id=el.dataset.delsess; if(confirm("Delete this session? (The drills themselves stay.)")){ try{ await deleteDrill(id); }catch(e){} } });
 
     if(coach){
       const form = document.getElementById("drillForm");
@@ -314,6 +428,8 @@ export function renderLibrary(){
   const draw = ()=>{
     if(!screen) return renderList();
     if(screen.mode==="pick") return renderPick();
+    if(screen.mode==="sessionbuild") return renderSessionBuild();
+    if(screen.mode==="sessionview") return renderSessionView();
     return renderCourtScreen();
   };
 
