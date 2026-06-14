@@ -320,6 +320,9 @@ export function renderLibrary(){
   view.innerHTML = `<div class="muted">Loading library…</div>`;
   state.unsub.push(listenDrills((arr, err)=>{
     if(err){ view.innerHTML = `<div class="err">Couldn't load library: ${esc(err.message)}</div>`; return; }
-    drills = arr; if(!screen) draw();
+    drills = arr;
+    // opened from a film-room note? jump straight into that drill.
+    if(state.pendingDrill){ const d=arr.find(x=>x.docId===state.pendingDrill); state.pendingDrill=null; if(d){ openPlay(d); return; } }
+    if(!screen) draw();
   }));
 }

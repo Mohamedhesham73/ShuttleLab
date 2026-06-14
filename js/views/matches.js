@@ -1,5 +1,5 @@
-import { state, esc } from "../core.js";
-import { listenVideos, addVideo, updateVideo, deleteVideo, markVideoWatched, getPlaybackUrl, deleteR2 } from "../data.js";
+import { state, esc, navigate } from "../core.js";
+import { listenVideos, addVideo, updateVideo, deleteVideo, markVideoWatched, getPlaybackUrl, deleteR2, listenDrills } from "../data.js";
 import { uploadToR2 } from "../r2upload.js";
 
 // =============================================================
@@ -49,6 +49,7 @@ export function renderMatches(){
   const view = document.getElementById("view");
   const coach = state.role === "coach";
   let videos = [];
+  let drills = [];      // Library drills, to link a corrective drill to a note
   let current = null;   // open video docId (so live updates don't clobber the editor)
   let sub = "coach";    // players only: "coach" (from coach) | "mine" (my uploads)
 
@@ -250,9 +251,10 @@ export function renderMatches(){
         <div id="flmNote" style="position:absolute;left:10px;right:10px;top:10px;display:none;background:rgba(8,24,18,0.88);border:1px solid rgba(164,221,43,.35);border-radius:10px;padding:9px 12px;color:#eafff0;">
           <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--brand);margin-bottom:3px;"><span id="flmNoteMeta">Note</span></div>
           <div id="flmNoteText" style="font-size:13px;line-height:1.45;"></div>
-          <div style="display:flex;gap:6px;margin-top:8px;">
+          <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
             <button class="btn pri" id="flmResume" style="display:none;padding:5px 12px;font-size:12px;">▶ Resume</button>
             <button class="btn" id="flmHear" style="display:none;padding:5px 12px;font-size:12px;">🔊 Hear coach</button>
+            <button class="btn" id="flmDrill" style="display:none;padding:5px 12px;font-size:12px;border-color:var(--brand);color:var(--brand);">🏸 Open the drill</button>
           </div>
         </div>
         <div id="flmSlow" style="position:absolute;right:10px;bottom:10px;display:none;background:rgba(8,24,18,0.8);color:#5db9ff;font-size:11px;padding:3px 9px;border-radius:20px;">slow-mo</div>
@@ -302,6 +304,10 @@ export function renderMatches(){
             <button class="btn" id="flmVDel" style="padding:5px 10px;font-size:12px;display:none;color:var(--down);border-color:var(--down);">Remove</button>
             <span id="flmRecMsg" class="muted" style="font-size:12px;"></span>
           </div>
+        </div>
+        <div style="border-top:1px solid var(--line);padding-top:10px;margin-top:10px;">
+          <div class="muted" style="font-size:12px;margin-bottom:6px;">Link a drill — the fix for this mistake</div>
+          <select id="flmEdDrill" style="width:100%;"><option value="">No drill linked</option></select>
         </div>
         <button class="btn" id="flmEdDone" style="width:100%;margin-top:12px;">Done</button>
       </div>` : ``}
@@ -385,6 +391,10 @@ export function renderMatches(){
       document.getElementById("flmResume").style.display = withResume ? "inline-flex" : "none";
       const hear=document.getElementById("flmHear");
       if(hear){ hear.style.display = m.audio ? "inline-flex" : "none"; hear.onclick=()=>playAudio(m); }
+      const dbtn=document.getElementById("flmDrill");
+      if(dbtn){ const has = m.drillId && drills.some(d=>d.docId===m.drillId);
+        dbtn.style.display = has ? "inline-flex" : "none";
+        if(has){ dbtn.onclick=()=>{ state.pendingDrill = m.drillId; navigate("library"); }; } }
       showOverlay(m); shownId = m.id;
       if(m.audio) playAudio(m);   // the coach's voice plays as the note appears
     }
@@ -448,6 +458,12 @@ export function renderMatches(){
       document.getElementById("flmVDel").style.display = m.audio ? "inline-flex" : "none";
       document.getElementById("flmRec").textContent = "● Record";
       document.getElementById("flmRecMsg").textContent = m.audio ? "Voice attached." : "";
+      const dsel=document.getElementById("flmEdDrill");
+      if(dsel){
+        const courts=drills.filter(d=>d.court);
+        dsel.innerHTML = `<option value="">No drill linked</option>`+courts.map(d=>`<option value="${esc(d.docId)}">${esc(d.title)}</option>`).join("");
+        dsel.value = m.drillId || "";
+      }
       showOverlay(m);
     }
     function closeEditor(){ const ed=document.getElementById("flmEditor"); if(ed) ed.style.display="none"; sel=null; tool=null; showOverlay(null); }
@@ -459,6 +475,7 @@ export function renderMatches(){
         markers.push(m); renderMk(); openEditor(m);
       };
       document.getElementById("flmEdNote").oninput=function(){ if(sel){ sel.note=this.value; renderMk(); } };
+      document.getElementById("flmEdDrill").onchange=function(){ if(sel){ const d=drills.find(x=>x.docId===this.value); sel.drillId=this.value||null; sel.drillTitle=d?d.title:null; } };
       document.getElementById("flmTgPause").onclick=function(){ if(!sel)return; sel.pause=!sel.pause; this.classList.toggle("on",sel.pause); renderMk(); };
       document.getElementById("flmTgSlow").onclick=function(){ if(!sel)return; sel.slow=!sel.slow; this.classList.toggle("on",sel.slow); document.getElementById("flmSlowSpd").style.display=sel.slow?"inline-block":"none"; renderMk(); };
       document.getElementById("flmSlowSpd").onchange=function(){ if(sel) sel.slowSpd=parseFloat(this.value); };
@@ -635,6 +652,7 @@ export function renderMatches(){
 
   // ---------- boot ----------
   view.innerHTML = `<div class="muted">Loading film room…</div>`;
+  state.unsub.push(listenDrills((arr)=>{ drills = arr||[]; }));
   state.unsub.push(listenVideos((arr, err)=>{
     if(err){ view.innerHTML = `<div class="err">Couldn't load videos: ${esc(err.message)}</div>`; return; }
     videos = arr;
