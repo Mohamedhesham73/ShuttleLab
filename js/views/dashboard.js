@@ -2,6 +2,7 @@ import { state, esc, r1, fmtDate, testById, avatar, navigate } from "../core.js"
 import { TESTS } from "../config.js";
 import { listenMeasurements, listenGoals, setGoal } from "../data.js";
 import { openReport } from "../report.js";
+import { cardFromSessions, tierColor, ratingColor } from "../rating.js";
 
 export function renderDashboard(){
   const view = document.getElementById("view");
@@ -9,7 +10,7 @@ export function renderDashboard(){
   const u = state.roster.find(x=>String(x.id)===String(state.targetId));
   const name = state.targetName || state.name;
 
-  let sessions = [], goals = {}, loadedM = false, chart = null;
+  let sessions = [], goals = {}, loadedM = false, chart = null, radar = null;
 
   // All-time personal best for a test, plus when it was set, whether it's brand
   // new this session, and how far it has come from the very first test.
@@ -103,12 +104,36 @@ export function renderDashboard(){
 
     const pbHeadline = newPBs.length ? ` · <span style="color:var(--brand);font-weight:600;">${newPBs.length} new PB${newPBs.length>1?"s":""} this session</span>` : "";
 
+    // ---- FIFA-style athlete card ----
+    const card = cardFromSessions(sessions);
+    const tCol = tierColor(card.tier);
+    const statBar = s => `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+      <span style="font-size:11px;width:84px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;flex:0 0 auto;">${s.label}</span>
+      <div class="bar" style="flex:1;"><div style="width:${s.rating||0}%;"></div></div>
+      <span class="num" style="width:24px;text-align:right;font-weight:700;color:${ratingColor(s.rating)};">${s.rating==null?"—":s.rating}</span>
+    </div>`;
+    const cardBlock = `<div class="card fade" style="padding:18px;margin-bottom:18px;">
+      <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;">
+        <div style="text-align:center;min-width:108px;flex:0 0 auto;padding:6px 10px;border-radius:14px;background:linear-gradient(165deg,rgba(164,221,43,.16),rgba(10,15,8,.35));border:1px solid var(--line);">
+          <div class="num" style="font-size:46px;font-weight:800;color:var(--brand);line-height:1;">${card.overall==null?"—":card.overall}</div>
+          <div class="disp" style="font-size:12px;letter-spacing:.14em;color:${tCol};">${card.tier}</div>
+          <div style="margin:10px auto 0;display:flex;justify-content:center;">${avatar(name, u&&u.photo, 54)}</div>
+          <div class="disp" style="font-size:13px;margin-top:6px;">${esc(name)}</div>
+        </div>
+        <div style="position:relative;height:200px;flex:1;min-width:210px;"><canvas id="radar"></canvas></div>
+      </div>
+      <div style="margin-top:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:2px 20px;">
+        ${card.stats.map(statBar).join("")}
+      </div>
+    </div>`;
+
     view.innerHTML = `${back}
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
         ${title}
         ${state.role==="coach" ? `<button class="btn" id="pdfBtn"><span style="color:var(--brand)">⤓</span> Export PDF</button>` : ``}
       </div>
       <div class="muted" style="font-size:13px;margin:6px 0 16px;">Last test ${fmtDate(latest.dateISO)} · ${sessions.length} session${sessions.length>1?"s":""}${pbHeadline}</div>
+      ${cardBlock}
       ${compare}
       ${pbBlock}
       <div class="card fade" style="padding:18px;margin-bottom:18px;">
@@ -158,6 +183,19 @@ export function renderDashboard(){
     };
     drawTrend(TESTS[0].id);
     document.getElementById("trendSel").onchange = (e)=>drawTrend(e.target.value);
+
+    // ---- athlete radar ----
+    const radarEl = document.getElementById("radar");
+    if(radarEl && window.Chart){
+      if(radar) radar.destroy();
+      radar = new window.Chart(radarEl, {
+        type:"radar",
+        data:{ labels:card.stats.map(s=>s.label), datasets:[{ data:card.stats.map(s=>s.rating||0), backgroundColor:"rgba(164,221,43,.18)", borderColor:"#a4dd2b", borderWidth:2, pointBackgroundColor:"#a4dd2b", pointRadius:3 }] },
+        options:{ responsive:true, maintainAspectRatio:false,
+          plugins:{ legend:{display:false} },
+          scales:{ r:{ min:0, max:100, ticks:{ display:false, stepSize:25 }, grid:{ color:"rgba(255,255,255,.08)" }, angleLines:{ color:"rgba(255,255,255,.08)" }, pointLabels:{ color:"#8f9a86", font:{size:11} } } } }
+      });
+    }
   };
 
   const wireBack = ()=>{ const b=document.getElementById("back"); if(b) b.onclick=()=>navigate("team"); };

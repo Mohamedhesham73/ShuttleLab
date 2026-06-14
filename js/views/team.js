@@ -1,12 +1,13 @@
 import { state, esc, navigate, avatar, testById } from "../core.js";
 import { TESTS } from "../config.js";
 import { listenAllMeasurements } from "../data.js";
+import { cardFromSessions, tierColor, overallOfSession } from "../rating.js";
 
 export function renderTeam(){
   const view = document.getElementById("view");
   const roster = state.roster.filter(u=>u.role!=="coach");
   let board = TESTS[0].id;
-  let latestByUid = {};
+  let latestByUid = {}, sessionsByUid = {};
 
   const draw = ()=>{
     const bm = testById(board);
@@ -29,13 +30,34 @@ export function renderTeam(){
           <span class="disp muted" style="font-size:12px;width:38px;">${bm.unit}</span></div>`).join("")
           :'<div class="muted" style="font-size:13px;">No results logged yet.</div>'}
       </div>
-      <div class="disp" style="font-size:18px;margin-bottom:14px;">Team · ${roster.length} players</div>
-      <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr));">
-        ${roster.map(p=>{
+      <div class="disp" style="font-size:18px;margin-bottom:14px;">Squad · ${roster.length} players</div>
+      <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(230px,1fr));">
+        ${roster.slice().sort((a,b)=>((cardFromSessions(sessionsByUid[String(b.id)]||[]).overall||-1)-(cardFromSessions(sessionsByUid[String(a.id)]||[]).overall||-1))).map(p=>{
+          const ss = sessionsByUid[String(p.id)] || [];
+          const card = cardFromSessions(ss);
+          const tCol = tierColor(card.tier);
           const sess = latestByUid[String(p.id)];
           const done = sess ? `Last test ${new Date((sess.dateISO||"")+"T00:00:00").toLocaleDateString(undefined,{month:"short",day:"numeric"})}` : "No test yet";
-          return `<div class="card fade" style="padding:16px;cursor:pointer;" data-id="${p.id}" data-name="${esc(p.name)}">
-            <div style="display:flex;align-items:center;gap:11px;">${avatar(p.name,p.photo,40)}<div class="disp" style="font-size:18px;">${esc(p.name)}</div></div>
+          // attention arrow — overall of latest vs previous session
+          let arrow = "", flag = "";
+          if(ss.length>=2){
+            const dlt = (overallOfSession(ss[ss.length-1].results)||0) - (overallOfSession(ss[ss.length-2].results)||0);
+            if(dlt>0) arrow = `<span style="color:var(--up);font-size:13px;">▲ ${dlt}</span>`;
+            else if(dlt<0){ arrow = `<span style="color:var(--down);font-size:13px;">▼ ${Math.abs(dlt)}</span>`; flag = "border-left:3px solid var(--down);"; }
+            else arrow = `<span class="muted" style="font-size:13px;">— level</span>`;
+          }
+          return `<div class="card fade" style="padding:16px;cursor:pointer;${flag}" data-id="${p.id}" data-name="${esc(p.name)}" data-ov="${card.overall==null?-1:card.overall}">
+            <div style="display:flex;align-items:center;gap:11px;">
+              <div style="text-align:center;flex:0 0 auto;min-width:40px;">
+                <div class="num" style="font-size:28px;font-weight:800;color:var(--brand);line-height:1;">${card.overall==null?"—":card.overall}</div>
+                <div class="disp" style="font-size:9px;letter-spacing:.1em;color:${tCol};">${card.tier}</div>
+              </div>
+              ${avatar(p.name,p.photo,40)}
+              <div style="flex:1;min-width:0;">
+                <div class="disp" style="font-size:17px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.name)}</div>
+                <div style="margin-top:2px;">${arrow}</div>
+              </div>
+            </div>
             <div class="muted" style="font-size:12px;margin-top:10px;">${done}</div>
             <div style="margin-top:10px;"><span class="btn" style="padding:6px 12px;font-size:12px;">Open ›</span></div></div>`;
         }).join("")}
@@ -50,11 +72,13 @@ export function renderTeam(){
   view.innerHTML = `<div class="muted">Loading team…</div>`;
   state.unsub.push(listenAllMeasurements((all, err)=>{
     if(err){ view.innerHTML = `<div class="err">Couldn't load team: ${esc(err.message)}</div>`; return; }
-    latestByUid = {};
+    latestByUid = {}; sessionsByUid = {};
     all.forEach(m=>{
       const k = String(m.uid);
       if(!latestByUid[k] || (m.dateISO||"") > (latestByUid[k].dateISO||"")) latestByUid[k] = m;
+      (sessionsByUid[k] = sessionsByUid[k] || []).push(m);
     });
+    Object.keys(sessionsByUid).forEach(k=>sessionsByUid[k].sort((a,b)=>(a.dateISO||"").localeCompare(b.dateISO||"")));
     draw();
   }));
 }
