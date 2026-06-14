@@ -79,9 +79,20 @@ export function renderMindRoom(){
   let coachGifts = [];
   state.unsub.push(listenGiftJar(list=>{ coachGifts = list||[]; }));
 
-  // player's private "sky" (mood stars) — kept in the owner-only private store
-  let stars = [];
-  getPrivate(state.uid).then(p=>{ stars = (p && p.stars) || []; }).catch(()=>{});
+  // player's private store — mood "sky", gratitude jar, and a breathing streak
+  let stars = [], priv = {};
+  getPrivate(state.uid).then(p=>{ priv = p||{}; stars = priv.stars || []; bumpStreak(); }).catch(()=>{});
+  function bumpStreak(){
+    const today=new Date(); today.setHours(0,0,0,0); const tISO=today.toISOString().slice(0,10);
+    if(priv.lastVisit!==tISO){
+      const y=new Date(today); y.setDate(y.getDate()-1); const yISO=y.toISOString().slice(0,10);
+      priv.streak = (priv.lastVisit===yISO) ? (priv.streak||0)+1 : 1;
+      priv.lastVisit = tISO;
+      savePrivate(state.uid, { streak:priv.streak, lastVisit:priv.lastVisit }).catch(()=>{});
+    }
+    updateStreak();
+  }
+  function updateStreak(){ const el=document.getElementById("mrStreak"); if(el) el.textContent = (priv.streak>1) ? ("🔥 "+priv.streak+"-day streak") : ""; }
 
   const allGifts = ()=> GIFTS.concat(coachGifts);
 
@@ -117,7 +128,7 @@ export function renderMindRoom(){
         <canvas id="mrCv" style="position:absolute;inset:0;width:100%;height:100%;touch-action:none;"></canvas>
 
         <div style="position:absolute;top:14px;left:16px;right:16px;display:flex;align-items:center;justify-content:space-between;z-index:2;">
-          <span style="font-size:13px;color:#fff;opacity:.85;">Mind room</span>
+          <div style="display:flex;align-items:center;gap:8px;"><span style="font-size:13px;color:#fff;opacity:.85;">Mind room</span><span id="mrStreak" style="font-size:12px;color:var(--brand);"></span></div>
           <div style="display:flex;gap:8px;align-items:center;">
             <span id="mrSky" style="font-size:12px;color:#fff;opacity:.8;"></span>
             <button id="mrNew" style="display:flex;align-items:center;gap:6px;background:rgba(0,0,0,.28);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:20px;padding:6px 11px;font-size:12px;">new world</button>
@@ -140,6 +151,7 @@ export function renderMindRoom(){
           <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
             <button id="mrStar" style="flex:1;min-width:96px;background:rgba(0,0,0,.3);color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:12px;padding:9px;font-size:12px;">Leave a star</button>
             <button id="mrGame" style="flex:1;min-width:96px;background:rgba(0,0,0,.3);color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:12px;padding:9px;font-size:12px;">Hold my hand</button>
+            <button id="mrGrat" style="flex:1;min-width:96px;background:rgba(0,0,0,.3);color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:12px;padding:9px;font-size:12px;">🫙 Gratitude</button>
             ${coach
               ? `<button id="mrJar" style="flex:1;min-width:96px;background:rgba(0,0,0,.3);color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:12px;padding:9px;font-size:12px;">My words</button><button id="mrInbox" style="flex:1;min-width:96px;background:rgba(0,0,0,.3);color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:12px;padding:9px;font-size:12px;">Messages</button>`
               : `<button id="mrTalk" style="flex:1;min-width:96px;background:var(--brand);color:#0b0e0c;border:none;border-radius:12px;padding:9px;font-size:12px;font-weight:600;">Talk to ${esc(coachName.split(" ")[0])}</button>`}
@@ -150,7 +162,7 @@ export function renderMindRoom(){
     const cv = document.getElementById("mrCv");
     document.getElementById("mrGreet").textContent = greet;
     document.getElementById("mrGift").textContent = gift;
-    updateSky();
+    updateSky(); updateStreak();
 
     const engine = mountScene(cv, Wd, Hd, pick(SCENE_KEYS));
 
@@ -191,6 +203,7 @@ export function renderMindRoom(){
     // leave a star (private mood)
     document.getElementById("mrStar").onclick = ()=> openStar(reroll);
     document.getElementById("mrGame").onclick = ()=> renderGame();
+    document.getElementById("mrGrat").onclick = ()=> openGratitude();
     const talk = document.getElementById("mrTalk");
     if(talk) talk.onclick = ()=> composeMessage();
     const jar = document.getElementById("mrJar");
@@ -261,6 +274,32 @@ export function renderMindRoom(){
         setTimeout(()=>{ wrap.remove(); }, 700);
       });
       wrap.querySelector("#mrStarClose").onclick = ()=> wrap.remove();
+    }
+
+    // gratitude jar (private)
+    function openGratitude(){
+      const wrap=document.createElement("div");
+      wrap.style.cssText="position:absolute;inset:0;z-index:5;background:rgba(6,8,7,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px;text-align:center;";
+      wrap.innerHTML=`
+        <div style="color:#fff;font-size:17px;">🫙 Gratitude jar</div>
+        <div style="color:#fff;opacity:.7;font-size:12px;margin-top:-4px;">One small good thing. Only you ever see this.</div>
+        <input id="mrGratIn" placeholder="Today I'm grateful for…" style="width:100%;max-width:300px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.2);border-radius:12px;color:#fff;padding:11px;font-size:14px;">
+        <div style="display:flex;gap:10px;">
+          <button id="mrGratAdd" style="background:var(--brand);color:#0b0e0c;border:none;border-radius:20px;padding:9px 18px;font-size:13px;font-weight:600;">Drop it in</button>
+          <button id="mrGratClose" style="background:transparent;color:#fff;opacity:.75;border:1px solid rgba(255,255,255,.25);border-radius:20px;padding:9px 16px;font-size:13px;">close</button>
+        </div>
+        <div id="mrGratList" style="max-width:300px;width:100%;"></div>`;
+      document.getElementById("mrRoom").appendChild(wrap);
+      const renderList=()=>{ const el=wrap.querySelector("#mrGratList"); const items=(priv.gratitude||[]).slice(-6).reverse();
+        el.innerHTML = items.length ? items.map(g=>`<div style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:8px 11px;margin-top:7px;color:#fff;font-size:13px;text-align:left;">${esc(g.text)}</div>`).join("") : `<div style="color:#fff;opacity:.5;font-size:12px;margin-top:8px;">Your jar is empty — drop the first one in.</div>`; };
+      renderList();
+      wrap.querySelector("#mrGratAdd").onclick=async ()=>{
+        const t=wrap.querySelector("#mrGratIn").value.trim(); if(!t) return;
+        priv.gratitude=(priv.gratitude||[]).concat([{ text:t, ts:Date.now() }]);
+        wrap.querySelector("#mrGratIn").value=""; renderList(); engine.celebrate();
+        try{ await savePrivate(state.uid, { gratitude:priv.gratitude }); }catch(e){ toast("Couldn't save — check your connection.","err"); }
+      };
+      wrap.querySelector("#mrGratClose").onclick=()=> wrap.remove();
     }
   }
 
