@@ -10,8 +10,8 @@ export function logout(){
 
 export function header(){
   const tabs = state.role==="coach"
-    ? [["team","Team"],["train","Training"],["library","Library"],["matches","Matches"],["board","Leaderboard"],["mind","Mind Room"]]
-    : [["dash","Dashboard"],["log","Log"],["train","Training"],["library","Library"],["matches","Videos"],["board","Leaderboard"],["mind","Mind Room"]];
+    ? [["team","Squad"],["train","Game Plan"],["library","Court Lab"],["matches","Film Room"],["board","Ladder"],["mind","Mind Room"]]
+    : [["dash","Progress"],["log","Testing"],["train","Game Plan"],["library","Court Lab"],["matches","Film Room"],["board","Ladder"],["mind","Mind Room"]];
   return `<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
     <div class="brand"><span class="logo-txt" style="font-size:22px;">Shuttle<b>Lab</b></span></div>
     <div style="display:flex;align-items:center;gap:10px;">

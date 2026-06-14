@@ -18,7 +18,7 @@ export function renderTeam(){
 
     view.innerHTML = `<div class="card fade" style="padding:18px;margin-bottom:18px;">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
-          <span class="disp" style="font-size:16px;">🏆 Leaderboard</span>
+          <span class="disp" style="font-size:16px;">🏆 Ladder</span>
           <select id="boardSel" style="width:auto;">${TESTS.map(t=>`<option value="${t.id}" ${t.id===board?"selected":""}>${t.name}</option>`).join("")}</select>
         </div>
         ${ranked.length?ranked.map((r,i)=>`<div style="display:flex;align-items:center;gap:12px;padding:9px 0;border-top:${i?"1px solid var(--line)":"none"};">

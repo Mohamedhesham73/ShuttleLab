@@ -71,7 +71,7 @@ export function renderMatches(){
 
     view.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
-        <div class="logo-txt" style="font-size:20px;">${coach ? "Film room" : "Videos"}</div>
+        <div class="logo-txt" style="font-size:20px;">Film Room</div>
         ${canPost ? `<button class="btn pri" id="addVidBtn">+ Add video</button>` : ``}
       </div>
 

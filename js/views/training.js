@@ -85,7 +85,7 @@ export function renderTraining(){
 
   view.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
-      <span class="muted" style="font-size:14px;">Season plan</span>
+      <span class="muted" style="font-size:14px;">Game Plan</span>
       ${roster.length?`<select id="trainSel" style="width:auto;">${roster.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join("")}</select>`:""}
     </div>
     <div id="planEdit"><div class="muted">Loading…</div></div>

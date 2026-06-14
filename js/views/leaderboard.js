@@ -71,7 +71,7 @@ export function renderLeaderboard(){
     const note = coach ? "" : `<div class="muted" style="font-size:12px;margin-bottom:10px;">Names are hidden — you can see the rankings and your own place.</div>`;
 
     view.innerHTML = `
-      <div class="logo-txt" style="font-size:20px;margin-bottom:12px;">Team leaderboard</div>
+      <div class="logo-txt" style="font-size:20px;margin-bottom:12px;">The Ladder</div>
       ${note}
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
         ${TESTS.map(x=>`<span class="chip ${x.id===testId?"on":""}" data-test="${x.id}">${esc(x.name)}</span>`).join("")}
