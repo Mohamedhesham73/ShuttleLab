@@ -178,6 +178,7 @@ export function mountProCourt(container, opts){
   container.innerHTML = `
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
       ${Object.keys(CAMS).map(k=>`<span class="chip ${k==="broadcast"?"on":""}" id="${uid}cam_${k}">🎥 ${CAMS[k].name}</span>`).join("")}
+      <span class="chip" id="${uid}cam_shuttle">📹 Shuttle cam</span><span class="chip" id="${uid}cam_eyes">👁 Player view</span>
       <span class="muted" style="font-size:12px;margin-left:auto;">${cat==="mixed"?"Mixed doubles":cat==="doubles"?"Doubles":"Singles"} · ${feed==="multi"?"Multi-shuttle":"Drill"}</span>
     </div>
     <div style="display:flex;justify-content:center;background:linear-gradient(#0a1822,#0c1410);border:1px solid var(--line);border-radius:14px;overflow:hidden;">
@@ -245,6 +246,7 @@ export function mountProCourt(container, opts){
   let tCur = 0, stopAt = 0, lastTs = 0, activeIdx = -1, loopT0 = 0;
   let tl = null;
   let beats = [], beatI = 0, beatOn = true, audioCtx = null;   // on-court metronome
+  let dynCam = null;   // "shuttle" | "eyes" — dynamic cameras that track the action
   let mvSel = null, mvOn = false, fdOn = false;   // Move tool / Place-feeder tool
   let ssSel = null, ssOn = false;                 // Set-start tool (positions, not steps)
   let autoRot = true;                             // doubles 2v2 formation rotation
@@ -534,7 +536,9 @@ export function mountProCourt(container, opts){
   }
 
   function renderDynamic(t){
-    const { st, shuttles } = tl ? evalAt(t) : { st:null, shuttles:[] };
+    const ev = tl ? evalAt(t) : { st:null, shuttles:[] };
+    if(dynCam){ updateDynCam(ev); calcBasis(); renderStatic(); }
+    const { st, shuttles } = ev;
     let far="", near="";
     players.forEach(pl=>{
       const ps = st ? st[pl.p] : { x:pl.base.x, y:pl.base.y, pose:pl.feeder?"feeder":"ready", poseFrom:"ready", blend:1, face:pl.p[0]==="B"?-1:1, zoff:0 };
@@ -868,7 +872,36 @@ export function mountProCourt(container, opts){
   }
 
   // ---------- camera ----------
+  // dynamic cameras — recompute position each frame from the action
+  function updateDynCam(ev){
+    const shu = ev.shuttles && ev.shuttles.length ? ev.shuttles[ev.shuttles.length-1] : null;
+    if(dynCam==="shuttle"){
+      if(shu){
+        let dvx=shu.x-shu.px, dvy=shu.y-shu.py;
+        if(Math.hypot(dvx,dvy)<0.001){ dvx=0; dvy=(shu.y<CT.NET?1:-1); }
+        const dir=vnorm([dvx,dvy,0]);
+        cam.C=[shu.x-dir[0]*4.6, shu.y-dir[1]*4.6, (shu.z||1)+1.7];
+        cam.T=[shu.x+dir[0]*3.2, shu.y+dir[1]*3.2, Math.max(0.4,(shu.z||1))];
+        cam.F=470;
+      }
+    } else if(dynCam==="eyes"){
+      const p = (ev.st && ev.st["A1"]) ? ev.st["A1"] : { x:CT.CX, y:3.8 };
+      let look = shu ? [shu.x, shu.y, (shu.z||1.2)] : [CT.CX, CT.NET, 1.4];
+      if(Math.hypot(look[0]-p.x, look[1]-p.y)<0.6) look=[CT.CX, CT.NET, 1.4];
+      cam.C=[p.x, p.y, 1.62]; cam.T=look; cam.F=540;
+    }
+  }
+  function setDyn(mode){
+    dynCam=mode;
+    Object.keys(CAMS).forEach(k=>gid("cam_"+k).classList.remove("on"));
+    const sc=gid("cam_shuttle"), ec=gid("cam_eyes");
+    if(sc) sc.classList.toggle("on",mode==="shuttle");
+    if(ec) ec.classList.toggle("on",mode==="eyes");
+    renderDynamic(playing?tCur:(tl?Math.min(tCur,tl.total):0));
+  }
   function setCam(key){
+    dynCam=null;
+    const sc=gid("cam_shuttle"), ec=gid("cam_eyes"); if(sc) sc.classList.remove("on"); if(ec) ec.classList.remove("on");
     Object.keys(CAMS).forEach(k=>gid("cam_"+k).classList.toggle("on",k===key));
     const from={C:[...cam.C],T:[...cam.T],F:cam.F}, to=CAMS[key];
     const t0=performance.now();
@@ -886,6 +919,7 @@ export function mountProCourt(container, opts){
   gid("svg").addEventListener("pointerdown", onTap);
   if(challenge) gid("svg").addEventListener("pointerdown", e=>{ if(ch && ch.phase==="await"){ const c=svgXY(e); if(c) chTap(c); } });
   Object.keys(CAMS).forEach(k=>{ gid("cam_"+k).onclick=()=>setCam(k); });
+  { const _sc=gid("cam_shuttle"); if(_sc) _sc.onclick=()=>setDyn("shuttle"); const _ec=gid("cam_eyes"); if(_ec) _ec.onclick=()=>setDyn("eyes"); }
   const _chBtn=gid("chStart"); if(_chBtn) _chBtn.onclick=startChallenge;
   const _play=gid("play"); if(_play) _play.onclick=()=>{ if(oncourt){ ensureAudio(); if(!playing) beats=beepSchedule(); } if(playing){ stop(); } else if(tl && stopAt>0 && tCur<stopAt){ lastTs=0; playing=true; gid("play").textContent="❚❚ Pause"; raf=requestAnimationFrame(loop); } else { tCur=0; activeIdx=-1; playFrom(0, tl?tl.total:0); } };
   const _beat=gid("beat"); if(_beat) _beat.onclick=function(){ beatOn=!beatOn; this.classList.toggle("on",beatOn); ensureAudio(); };
