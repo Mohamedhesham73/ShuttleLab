@@ -125,7 +125,7 @@ export function mountProCourt(container, opts){
   const gid = s => container.querySelector("#"+uid+s);
 
   // ---- saved data (legacy array OR {steps, feeder, nA, nB}) ----
-  let meta = { nA:(cat!=="singles"?2:1), nB:(cat!=="singles"?2:1), feeder:{x:3.05,y:7.6}, bases:{}, rate:"normal" };
+  let meta = { nA:(cat!=="singles"?2:1), nB:(cat!=="singles"?2:1), feeder:{x:3.05,y:7.6}, bases:{}, rate:"normal", gender:"boys" };
   let steps = [];
   if(Array.isArray(opts.points)) steps = JSON.parse(JSON.stringify(opts.points));
   else if(opts.points && typeof opts.points==="object"){
@@ -134,18 +134,21 @@ export function mountProCourt(container, opts){
     if(opts.points.feeder) meta.feeder = { x:opts.points.feeder.x, y:opts.points.feeder.y };
     if(opts.points.bases) meta.bases = JSON.parse(JSON.stringify(opts.points.bases));
     if(opts.points.rate) meta.rate = opts.points.rate;
+    if(opts.points.gender) meta.gender = opts.points.gender;
   }
+  if(opts.gender) meta.gender = opts.gender;
   const FEEDRATE = { fast:{gap:0.35,fd:0.45}, normal:{gap:0.9,fd:0.6}, slow:{gap:1.6,fd:0.78} };
   steps.forEach(s=>{ if(s.p==="A")s.p="A1"; if(s.p==="B")s.p="B1"; if(s.hitter==="A")s.hitter="A1"; if(s.hitter==="B")s.hitter="B1"; });
 
   function spread(n){ return n===1?[3.05]: n===2?[1.8,4.3]: n===3?[1.2,3.05,4.9]:[0.9,2.5,3.6,5.2]; }
   function buildPlayers(){
-    const arr=[], bx=meta.bases||{}, mx=cat==="mixed";
-    // mixed: player 1 of each pair is the WOMAN (slightly smaller figure, "W"),
-    // player 2 the MAN ("M") — the rotation engine keeps W front in attack
-    spread(meta.nA).forEach((x,i)=>{ const id="A"+(i+1); arr.push({ p:id, jersey:"#a4dd2b", lbl: mx?(i===0?"W":"M"):id, fig: (mx&&i===0)?0.92:1, base: bx[id]?{...bx[id]}:{x, y:3.8} }); });
+    const arr=[], bx=meta.bases||{}, mx=cat==="mixed", girls=meta.gender==="girls";
+    // mixed: player 1 of each pair is the WOMAN ("W", a girl figure), player 2
+    // the MAN ("M"). Otherwise the whole squad follows the gender toggle.
+    const fem=(i)=> mx ? (i===0) : girls;
+    spread(meta.nA).forEach((x,i)=>{ const id="A"+(i+1); arr.push({ p:id, jersey:"#a4dd2b", lbl: mx?(i===0?"W":"M"):id, female:fem(i), base: bx[id]?{...bx[id]}:{x, y:3.8} }); });
     if(feed==="multi") arr.push({ p:"C", jersey:"#aab4ab", lbl:"C", base:{...meta.feeder}, feeder:true });
-    else spread(meta.nB).forEach((x,i)=>{ const id="B"+(i+1); arr.push({ p:id, jersey:"#5db9ff", lbl: mx?(i===0?"W":"M"):id, fig: (mx&&i===0)?0.92:1, base: bx[id]?{...bx[id]}:{x, y:9.6} }); });
+    else spread(meta.nB).forEach((x,i)=>{ const id="B"+(i+1); arr.push({ p:id, jersey:"#5db9ff", lbl: mx?(i===0?"W":"M"):id, female:fem(i), base: bx[id]?{...bx[id]}:{x, y:9.6} }); });
     return arr;
   }
   let players = buildPlayers();
@@ -178,7 +181,6 @@ export function mountProCourt(container, opts){
   container.innerHTML = `
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
       ${Object.keys(CAMS).map(k=>`<span class="chip ${k==="broadcast"?"on":""}" id="${uid}cam_${k}">🎥 ${CAMS[k].name}</span>`).join("")}
-      <span class="chip" id="${uid}cam_shuttle">📹 Shuttle cam</span><span class="chip" id="${uid}cam_eyes">👁 Player view</span>
       <span class="muted" style="font-size:12px;margin-left:auto;">${cat==="mixed"?"Mixed doubles":cat==="doubles"?"Doubles":"Singles"} · ${feed==="multi"?"Multi-shuttle":"Drill"}</span>
     </div>
     <div style="display:flex;justify-content:center;background:linear-gradient(#0a1822,#0c1410);border:1px solid var(--line);border-radius:14px;overflow:hidden;">
@@ -215,6 +217,12 @@ export function mountProCourt(container, opts){
       </span>
       <span class="muted" style="font-size:12px;">— e.g. 3 vs 1 for pressure drills</span>
     </div>` : ``}
+    ${cat!=="mixed" ? `<div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;">
+      <span class="muted" style="font-size:12px;">Figures</span>
+      <span class="chip ${meta.gender!=="girls"?"on":""}" id="${uid}gboys">Boys</span>
+      <span class="chip ${meta.gender==="girls"?"on":""}" id="${uid}ggirls">Girls</span>
+      <span class="muted" style="font-size:12px;">— match the player you're sending it to</span>
+    </div>` : ``}
     <div id="${uid}pal" style="display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-top:8px;"><span class="muted" style="font-size:12px;">Colour</span></div>
     <input id="${uid}noteIn" type="text" placeholder="Coaching note for the last shot (optional)" style="width:100%;margin-top:8px;">` : ``}
     ${oncourt ? `
@@ -246,7 +254,6 @@ export function mountProCourt(container, opts){
   let tCur = 0, stopAt = 0, lastTs = 0, activeIdx = -1, loopT0 = 0;
   let tl = null;
   let beats = [], beatI = 0, beatOn = true, audioCtx = null;   // on-court metronome
-  let dynCam = null;   // "shuttle" | "eyes" — dynamic cameras that track the action
   let mvSel = null, mvOn = false, fdOn = false;   // Move tool / Place-feeder tool
   let ssSel = null, ssOn = false;                 // Set-start tool (positions, not steps)
   let autoRot = true;                             // doubles 2v2 formation rotation
@@ -336,14 +343,24 @@ export function mountProCourt(container, opts){
     const racket = `<line x1="${pts.hR[0]}" y1="${pts.hR[1]}" x2="${pts.rk[0]}" y2="${pts.rk[1]}" stroke="#9aa49a" stroke-width="${w(0.02)}"/>
       <ellipse cx="${pts.rk[0]}" cy="${pts.rk[1]}" rx="${Math.max(1.6,rkLen*0.32)}" ry="${Math.max(1.1,rkLen*0.22)}" transform="rotate(${rkAng.toFixed(0)} ${pts.rk[0]} ${pts.rk[1]})" fill="rgba(230,240,235,.16)" stroke="#aeb8af" stroke-width="${w(0.014)}"/>`;
     const shoe = Math.max(1.4, 0.05*s);
-    const svg = shadow
-      + L("hip","kL","#16201a",0.062) + L("kL","fL","#16201a",0.055)
-      + L("hip","kR","#16201a",0.062) + L("kR","fR","#16201a",0.055)
+    const female = !!pl.female;
+    const headR = 0.075*s, hx=pts.head[0], hy=pts.head[1];
+    // legs: a skirt (waist→knees triangle) for girls, bare thighs for boys
+    const legs = female
+      ? `<polygon points="${pts.hip[0].toFixed(1)},${(pts.hip[1]-w(0.05)).toFixed(1)} ${pts.kL[0].toFixed(1)},${pts.kL[1].toFixed(1)} ${pts.kR[0].toFixed(1)},${pts.kR[1].toFixed(1)}" fill="${pl.jersey}"/>`
+        + L("kL","fL","#16201a",0.05) + L("kR","fR","#16201a",0.05)
+      : L("hip","kL","#16201a",0.062) + L("kL","fL","#16201a",0.055)
+        + L("hip","kR","#16201a",0.062) + L("kR","fR","#16201a",0.055);
+    const ponytail = female
+      ? `<line x1="${(hx-st.face*headR*0.55).toFixed(1)}" y1="${hy.toFixed(1)}" x2="${(hx-st.face*headR*1.05).toFixed(1)}" y2="${(hy+headR*2.4).toFixed(1)}" stroke="#3a2c22" stroke-width="${w(0.06)}" stroke-linecap="round"/>`
+      : "";
+    const svg = shadow + legs
       + `<line x1="${(pts.fL[0]-shoe).toFixed(1)}" y1="${pts.fL[1]}" x2="${(pts.fL[0]+shoe).toFixed(1)}" y2="${pts.fL[1]}" stroke="#e8efe6" stroke-width="${w(0.03)}" stroke-linecap="round"/>`
       + `<line x1="${(pts.fR[0]-shoe).toFixed(1)}" y1="${pts.fR[1]}" x2="${(pts.fR[0]+shoe).toFixed(1)}" y2="${pts.fR[1]}" stroke="#e8efe6" stroke-width="${w(0.03)}" stroke-linecap="round"/>`
       + L("neck","hip",pl.jersey,0.125)
       + L("neck","hL","#d9b08c",0.04) + L("neck","hR","#d9b08c",0.04)
-      + `<circle cx="${pts.head[0].toFixed(1)}" cy="${pts.head[1].toFixed(1)}" r="${(0.075*s).toFixed(1)}" fill="#d9b08c"/>`
+      + ponytail
+      + `<circle cx="${hx.toFixed(1)}" cy="${hy.toFixed(1)}" r="${headR.toFixed(1)}" fill="#d9b08c"/>`
       + racket;
     return { svg, far: st.y>CT.NET };
   }
@@ -536,9 +553,7 @@ export function mountProCourt(container, opts){
   }
 
   function renderDynamic(t){
-    const ev = tl ? evalAt(t) : { st:null, shuttles:[] };
-    if(dynCam){ updateDynCam(ev); calcBasis(); renderStatic(); }
-    const { st, shuttles } = ev;
+    const { st, shuttles } = tl ? evalAt(t) : { st:null, shuttles:[] };
     let far="", near="";
     players.forEach(pl=>{
       const ps = st ? st[pl.p] : { x:pl.base.x, y:pl.base.y, pose:pl.feeder?"feeder":"ready", poseFrom:"ready", blend:1, face:pl.p[0]==="B"?-1:1, zoff:0 };
@@ -872,36 +887,7 @@ export function mountProCourt(container, opts){
   }
 
   // ---------- camera ----------
-  // dynamic cameras — recompute position each frame from the action
-  function updateDynCam(ev){
-    const shu = ev.shuttles && ev.shuttles.length ? ev.shuttles[ev.shuttles.length-1] : null;
-    if(dynCam==="shuttle"){
-      if(shu){
-        let dvx=shu.x-shu.px, dvy=shu.y-shu.py;
-        if(Math.hypot(dvx,dvy)<0.001){ dvx=0; dvy=(shu.y<CT.NET?1:-1); }
-        const dir=vnorm([dvx,dvy,0]);
-        cam.C=[shu.x-dir[0]*4.6, shu.y-dir[1]*4.6, (shu.z||1)+1.7];
-        cam.T=[shu.x+dir[0]*3.2, shu.y+dir[1]*3.2, Math.max(0.4,(shu.z||1))];
-        cam.F=470;
-      }
-    } else if(dynCam==="eyes"){
-      const p = (ev.st && ev.st["A1"]) ? ev.st["A1"] : { x:CT.CX, y:3.8 };
-      let look = shu ? [shu.x, shu.y, (shu.z||1.2)] : [CT.CX, CT.NET, 1.4];
-      if(Math.hypot(look[0]-p.x, look[1]-p.y)<0.6) look=[CT.CX, CT.NET, 1.4];
-      cam.C=[p.x, p.y, 1.62]; cam.T=look; cam.F=540;
-    }
-  }
-  function setDyn(mode){
-    dynCam=mode;
-    Object.keys(CAMS).forEach(k=>gid("cam_"+k).classList.remove("on"));
-    const sc=gid("cam_shuttle"), ec=gid("cam_eyes");
-    if(sc) sc.classList.toggle("on",mode==="shuttle");
-    if(ec) ec.classList.toggle("on",mode==="eyes");
-    renderDynamic(playing?tCur:(tl?Math.min(tCur,tl.total):0));
-  }
   function setCam(key){
-    dynCam=null;
-    const sc=gid("cam_shuttle"), ec=gid("cam_eyes"); if(sc) sc.classList.remove("on"); if(ec) ec.classList.remove("on");
     Object.keys(CAMS).forEach(k=>gid("cam_"+k).classList.toggle("on",k===key));
     const from={C:[...cam.C],T:[...cam.T],F:cam.F}, to=CAMS[key];
     const t0=performance.now();
@@ -919,7 +905,6 @@ export function mountProCourt(container, opts){
   gid("svg").addEventListener("pointerdown", onTap);
   if(challenge) gid("svg").addEventListener("pointerdown", e=>{ if(ch && ch.phase==="await"){ const c=svgXY(e); if(c) chTap(c); } });
   Object.keys(CAMS).forEach(k=>{ gid("cam_"+k).onclick=()=>setCam(k); });
-  { const _sc=gid("cam_shuttle"); if(_sc) _sc.onclick=()=>setDyn("shuttle"); const _ec=gid("cam_eyes"); if(_ec) _ec.onclick=()=>setDyn("eyes"); }
   const _chBtn=gid("chStart"); if(_chBtn) _chBtn.onclick=startChallenge;
   const _play=gid("play"); if(_play) _play.onclick=()=>{ if(oncourt){ ensureAudio(); if(!playing) beats=beepSchedule(); } if(playing){ stop(); } else if(tl && stopAt>0 && tCur<stopAt){ lastTs=0; playing=true; gid("play").textContent="❚❚ Pause"; raf=requestAnimationFrame(loop); } else { tCur=0; activeIdx=-1; playFrom(0, tl?tl.total:0); } };
   const _beat=gid("beat"); if(_beat) _beat.onclick=function(){ beatOn=!beatOn; this.classList.toggle("on",beatOn); ensureAudio(); };
@@ -950,6 +935,10 @@ export function mountProCourt(container, opts){
     };
     gid("undo").onclick=()=>{ steps.pop(); afterStepsChange(); };
     gid("clr").onclick=()=>{ steps=[]; afterStepsChange(); };
+    const gb=gid("gboys"), gg=gid("ggirls");
+    const setGender=(g)=>{ meta.gender=g; if(gb) gb.classList.toggle("on",g==="boys"); if(gg) gg.classList.toggle("on",g==="girls"); players=buildPlayers(); afterStepsChange(); hint(g==="girls"?"Girl figures — send this to KOKA or Alya.":"Boy figures."); };
+    if(gb) gb.onclick=()=>setGender("boys");
+    if(gg) gg.onclick=()=>setGender("girls");
     gid("noteIn").oninput=function(){ for(let i=steps.length-1;i>=0;i--){ if(!steps[i].rec){ steps[i].note=this.value; paintList(); break; } } };
     if(feed!=="multi"){
       const setN=(team,delta)=>{
@@ -971,7 +960,7 @@ export function mountProCourt(container, opts){
   if(oncourt){ beats=beepSchedule(); const first=steps.findIndex(s=>!s.rec); if(first>=0) ocBanner(first); hint(feed==="multi"?"Prop the phone up, press Play — the beat ticks each feed so your feeding matches the rhythm.":"Prop the phone up and press Play — the beat ticks each shot."); }
 
   return {
-    getPoints: ()=> JSON.parse(JSON.stringify({ steps, feeder:meta.feeder, nA:meta.nA, nB:meta.nB, bases:meta.bases, rate:meta.rate })),
+    getPoints: ()=> JSON.parse(JSON.stringify({ steps, feeder:meta.feeder, nA:meta.nA, nB:meta.nB, bases:meta.bases, rate:meta.rate, gender:meta.gender })),
     getDNA: ()=> computeDNA(),
     hasShots: ()=> steps.some(s=>!s.rec),
     getView: ()=> "broadcast",
