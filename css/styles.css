@@ -12,13 +12,14 @@
   --glow:rgba(164,221,43,.55);
   --r:16px;
 }
-*{box-sizing:border-box;}
-html{-webkit-text-size-adjust:100%;}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+.btn,.tab,.chip,button,select,a,[data-go],[data-sub],[data-open],[data-pick]{touch-action:manipulation;}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%;}
 html{background:#06080a;}
 html,body{overflow-x:hidden;width:100%;min-height:100%;}
 
 body{
-  margin:0; min-height:100vh; color:var(--text);
+  margin:0; min-height:100vh; min-height:100dvh; color:var(--text);
   font-family:'Saira',system-ui,sans-serif; -webkit-font-smoothing:antialiased;
   background:
     radial-gradient(1100px 600px at 82% -12%, rgba(164,221,43,.16), transparent 58%),
@@ -127,10 +128,16 @@ a:hover{color:var(--brand2);}
 /* ---- form fields ---- */
 input,select,textarea{
   background:rgba(0,0,0,.38);border:1px solid var(--line);border-radius:12px;color:var(--text);
-  padding:12px 13px;font-family:'Saira',sans-serif;font-size:15px;width:100%;transition:.18s;
+  padding:12px 13px;font-family:'Saira',sans-serif;font-size:16px;width:100%;transition:.18s;
+  -webkit-appearance:none;appearance:none;max-width:100%;
+}
+/* custom caret since appearance:none removes the native one on iOS */
+select{
+  background-image:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="8" viewBox="0 0 12 8"><path d="M1 1l5 5 5-5" stroke="%238c9882" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>');
+  background-repeat:no-repeat;background-position:right 13px center;padding-right:34px;
 }
 input::placeholder,textarea::placeholder{color:#5d685530;color:rgba(140,152,130,.5);}
-input:focus,select:focus,textarea:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px rgba(164,221,43,.16);background:rgba(0,0,0,.5);}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px rgba(164,221,43,.16);background-color:rgba(0,0,0,.5);}
 label{font-family:'Saira Condensed',sans-serif;text-transform:uppercase;letter-spacing:.05em;font-size:12px;color:var(--muted);display:block;margin-bottom:6px;}
 
 /* ---- bits ---- */
@@ -150,10 +157,13 @@ label{font-family:'Saira Condensed',sans-serif;text-transform:uppercase;letter-s
 .fade{animation:rise .5s cubic-bezier(.2,.7,.2,1) both;}
 @keyframes rise{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:none;}}
 
-.center{min-height:100vh;display:grid;place-items:center;padding:20px;}
+.center{min-height:100vh;min-height:100dvh;display:grid;place-items:center;padding:20px;}
 .scrollx{overflow-x:auto;}
 .scrollx::-webkit-scrollbar{height:7px;}
 .scrollx::-webkit-scrollbar-thumb{background:rgba(164,221,43,.22);border-radius:8px;}
+
+/* never let an image/video blow out the page width on a phone */
+img,video{max-width:100%;height:auto;}
 
 /* ---- mobile ---- */
 @media (max-width:600px){
@@ -164,6 +174,13 @@ label{font-family:'Saira Condensed',sans-serif;text-transform:uppercase;letter-s
   .card:hover{transform:none;}
   .mc{padding:13px 14px;}
   .num{font-size:23px !important;}
+  /* fixed multi-gradient backgrounds cause scroll jank on iOS — let it scroll */
+  body{background-attachment:scroll;}
+  body::before{opacity:.4;}
+  /* comfortable minimum tap height for primary controls */
+  .btn,.tab{min-height:40px;display:inline-flex;align-items:center;justify-content:center;}
+  /* honour notch / home-bar safe areas in the installed PWA */
+  .wrap{padding-left:max(13px,env(safe-area-inset-left));padding-right:max(13px,env(safe-area-inset-right));}
 }
 @media (prefers-reduced-motion:reduce){
   *{animation:none !important;transition:none !important;}

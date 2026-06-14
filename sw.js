@@ -3,7 +3,7 @@
 // when online), falling back to the cached copy when offline. Data, the API,
 // and third-party CDNs (Firebase, Chart.js, fonts) always go straight to the
 // network and are never cached here.
-const CACHE = "shuttlelab-v3";
+const CACHE = "shuttlelab-v4";
 
 self.addEventListener("install", () => self.skipWaiting());
 
