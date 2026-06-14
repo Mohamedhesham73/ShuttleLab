@@ -51,6 +51,7 @@ export function renderMatches(){
   let videos = [];
   let drills = [];      // Library drills, to link a corrective drill to a note
   let current = null;   // open video docId (so live updates don't clobber the editor)
+  let comparing = false;// side-by-side compare screen open
   let sub = "coach";    // players only: "coach" (from coach) | "mine" (my uploads)
 
   // ---------- LIST SCREEN ----------
@@ -72,7 +73,10 @@ export function renderMatches(){
     view.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
         <div class="logo-txt" style="font-size:20px;">Film Room</div>
-        ${canPost ? `<button class="btn pri" id="addVidBtn">+ Add video</button>` : ``}
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          ${videos.filter(v=>v.source&&v.source.kind!=="youtube").length>=2 ? `<button class="btn" id="cmpBtn">⇄ Compare</button>` : ``}
+          ${canPost ? `<button class="btn pri" id="addVidBtn">+ Add video</button>` : ``}
+        </div>
       </div>
 
       ${!coach ? `<div style="display:flex;gap:8px;margin-bottom:14px;">
@@ -120,6 +124,8 @@ export function renderMatches(){
     view.querySelectorAll("[data-sub]").forEach(el=>{
       el.onclick = ()=>{ sub = el.dataset.sub; renderList(); };
     });
+    const cmpB = document.getElementById("cmpBtn");
+    if(cmpB) cmpB.onclick = ()=>{ comparing = true; renderCompare(); };
 
     view.querySelectorAll("[data-open]").forEach(el=>{
       el.onclick = ()=>{ const v = videos.find(x=>x.docId===el.dataset.open); if(v) openVideo(v); };
@@ -650,12 +656,54 @@ export function renderMatches(){
     renderMk();
   }
 
+  // ---------- side-by-side compare ----------
+  function renderCompare(){
+    const list = videos.filter(v=>v.source && v.source.kind!=="youtube");
+    const opt = sel => `<option value="">— pick a clip —</option>`+list.map(v=>`<option value="${esc(v.docId)}" ${sel===v.docId?"selected":""}>${esc(v.title||"Untitled")}</option>`).join("");
+    view.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+        <button class="btn" id="cmpBack" style="padding:7px 12px;font-size:12px;">← Back</button>
+        <div class="disp" style="font-size:18px;flex:1;">Compare clips</div>
+      </div>
+      <div class="muted" style="font-size:13px;margin-bottom:12px;">Two clips side by side — a player's technique next to a model, or before vs after. (Uploaded / link clips.)</div>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;">
+        <div><select id="cmpA">${opt(list[0]&&list[0].docId)}</select><div id="cmpAv" style="margin-top:8px;aspect-ratio:16/9;background:#000;border-radius:10px;overflow:hidden;"></div></div>
+        <div><select id="cmpB">${opt(list[1]&&list[1].docId)}</select><div id="cmpBv" style="margin-top:8px;aspect-ratio:16/9;background:#000;border-radius:10px;overflow:hidden;"></div></div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px;">
+        <button class="btn pri" id="cmpPlay" style="padding:8px 14px;">▶ Play both</button>
+        <button class="btn" id="cmpPause" style="padding:8px 12px;">❚❚ Pause</button>
+        <button class="btn" id="cmpRst" style="padding:8px 12px;">↺ Restart</button>
+        <select id="cmpSpd" style="width:auto;"><option value="1">1×</option><option value="0.5">0.5×</option><option value="0.25">0.25×</option></select>
+      </div>`;
+    document.getElementById("cmpBack").onclick = ()=>{ comparing=false; renderList(); };
+    const vids = ()=>[document.querySelector("#cmpAv video"), document.querySelector("#cmpBv video")].filter(Boolean);
+    const mount = async (slotId, docId)=>{
+      const slot=document.getElementById(slotId); if(!slot) return; slot.innerHTML="";
+      const v=videos.find(x=>x.docId===docId); if(!v){ return; }
+      let url=null; try{ url=await getPlaybackUrl(v.source); }catch(e){}
+      if(!url || !document.body.contains(slot)){ if(slot) slot.innerHTML=`<div style="color:var(--muted);font-size:12px;display:flex;align-items:center;justify-content:center;height:100%;">Couldn't load.</div>`; return; }
+      const el=document.createElement("video"); el.src=url; el.controls=true; el.playsInline=true; el.setAttribute("webkit-playsinline","");
+      el.style.cssText="width:100%;height:100%;object-fit:contain;background:#000;";
+      const sp=document.getElementById("cmpSpd"); el.playbackRate=sp?parseFloat(sp.value)||1:1;
+      slot.appendChild(el);
+    };
+    document.getElementById("cmpA").onchange=function(){ mount("cmpAv", this.value); };
+    document.getElementById("cmpB").onchange=function(){ mount("cmpBv", this.value); };
+    document.getElementById("cmpPlay").onclick=()=>vids().forEach(v=>v.play());
+    document.getElementById("cmpPause").onclick=()=>vids().forEach(v=>v.pause());
+    document.getElementById("cmpRst").onclick=()=>vids().forEach(v=>{ try{ v.currentTime=0; }catch(e){} });
+    document.getElementById("cmpSpd").onchange=function(){ const r=parseFloat(this.value)||1; vids().forEach(v=>{ try{ v.playbackRate=r; }catch(e){} }); };
+    if(list[0]) mount("cmpAv", list[0].docId);
+    if(list[1]) mount("cmpBv", list[1].docId);
+  }
+
   // ---------- boot ----------
   view.innerHTML = `<div class="muted">Loading film room…</div>`;
   state.unsub.push(listenDrills((arr)=>{ drills = arr||[]; }));
   state.unsub.push(listenVideos((arr, err)=>{
     if(err){ view.innerHTML = `<div class="err">Couldn't load videos: ${esc(err.message)}</div>`; return; }
     videos = arr;
-    if(!current) renderList();   // don't clobber an open editor
+    if(!current && !comparing) renderList();   // don't clobber an open editor or the compare screen
   }));
 }
