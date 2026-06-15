@@ -64,6 +64,14 @@ export function listenGiftJar(cb){
 }
 export function saveGiftJar(list){ return setDoc(doc(db,"plans","__giftjar"), { list }, { merge:true }); }
 
+// Challenge ladder: shared order + one pending challenge. Reuses the plans rule.
+export function listenLadder(cb){
+  return onSnapshot(doc(db,"plans","__ladder"),
+    d=>cb(d.exists()? d.data() : null),
+    err=>cb(null, err));
+}
+export function saveLadder(data){ return setDoc(doc(db,"plans","__ladder"), data, { merge:true }); }
+
 // ---- Private per-user store (Mind Room mood "stars"). Owner-only by rules. ----
 export async function getPrivate(uid){
   const d = await getDoc(doc(db,"private",String(uid)));

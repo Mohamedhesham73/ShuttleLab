@@ -2,11 +2,17 @@ import { state, esc, avatar, fmtDate } from "../core.js";
 import { TESTS } from "../config.js";
 import { listenAllMeasurements } from "../data.js";
 import { cardFromSessions, overallOfSession } from "../rating.js";
+import { listenLadder, saveLadder } from "../data.js";
 
 export function renderLeaderboard(){
   const view = document.getElementById("view");
   const coach = state.role === "coach";
   let all = [], testId = TESTS[0].id, mode = "best";   // mode: "best" | "latest"
+  let tab = "stats", ladder = null, sessionsByUid = {};
+
+  const tabsHtml = ()=>`<div style="display:flex;gap:6px;margin-bottom:12px;"><span class="chip ${tab==="stats"?"on":""}" data-tab="stats">📊 Rankings</span><span class="chip ${tab==="challenge"?"on":""}" data-tab="challenge">⚔ Challenge</span></div>`;
+  const wireTabs = ()=> view.querySelectorAll("[data-tab]").forEach(el=>el.onclick=()=>{ tab=el.dataset.tab; draw(); });
+  const overallOf = id => cardFromSessions(sessionsByUid[String(id)]||[]).overall || 0;
 
   const ghost = (size)=>`<span style="width:${size}px;height:${size}px;border-radius:50%;background:rgba(255,255,255,.08);display:inline-flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px;flex:0 0 auto;">?</span>`;
 
@@ -33,7 +39,9 @@ export function renderLeaderboard(){
     return { v:bestv, d:bd };
   };
 
-  const draw = ()=>{
+  const draw = ()=> tab==="challenge" ? renderChallenge() : renderStats();
+
+  const renderStats = ()=>{
     const t = testId==="overall" ? { id:"overall", name:"Overall", unit:"OVR", higher:true } : TESTS.find(x=>x.id===testId);
 
     const uids = Array.from(new Set(all.map(m=>String(m.uid))));
@@ -97,6 +105,7 @@ export function renderLeaderboard(){
 
     view.innerHTML = `
       <div class="logo-txt" style="font-size:20px;margin-bottom:12px;">The Ladder</div>
+      ${tabsHtml()}
       ${note}
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
         <span class="chip ${testId==="overall"?"on":""}" data-test="overall">⭐ Overall</span>
@@ -112,11 +121,75 @@ export function renderLeaderboard(){
 
     view.querySelectorAll("[data-test]").forEach(el=>el.onclick=()=>{ testId = el.dataset.test; draw(); });
     view.querySelectorAll("[data-mode]").forEach(el=>el.onclick=()=>{ mode = el.dataset.mode; draw(); });
+    wireTabs();
+  };
+
+  // ---------------- CHALLENGE LADDER ----------------
+  const renderChallenge = ()=>{
+    const players = state.roster.filter(u=>u.role!=="coach");
+    const nameOf = id => { const u=players.find(p=>String(p.id)===String(id)); return u?u.name:("#"+id); };
+    const photoOf = id => { const u=players.find(p=>String(p.id)===String(id)); return u&&u.photo; };
+    // order: saved, else seed by Overall rating; append any newcomers
+    let order = (ladder && Array.isArray(ladder.order)) ? ladder.order.filter(id=>players.some(p=>String(p.id)===String(id))) : null;
+    if(!order) order = players.map(p=>String(p.id)).sort((a,b)=>overallOf(b)-overallOf(a));
+    players.forEach(p=>{ if(!order.includes(String(p.id))) order.push(String(p.id)); });
+    const pending = ladder && ladder.pending;
+    const meId = String(state.user.id);
+    const myIdx = order.indexOf(meId);
+
+    const resolve = (winnerId)=>{
+      const c=pending.challengerId, d=pending.defenderId;
+      const next = order.slice();
+      if(String(winnerId)===String(c)){ const ci=next.indexOf(String(c)), di=next.indexOf(String(d)); if(ci>=0&&di>=0){ next[ci]=String(d); next[di]=String(c); } }
+      saveLadder({ order:next, pending:null }).catch(()=>{});
+    };
+    const challenge = (defenderId)=> saveLadder({ order, pending:{ challengerId:meId, defenderId:String(defenderId), ts:Date.now() } }).catch(()=>{});
+
+    const rows = order.map((id,i)=>{
+      const me = String(id)===meId;
+      const aboveId = i>0 ? order[i-1] : null;
+      const involved = pending && (String(pending.challengerId)===String(id) || String(pending.defenderId)===String(id));
+      const medal = i===0?"#ffd34d":i===1?"#cfd6dd":i===2?"#e0a973":"var(--muted)";
+      let action = "";
+      if(!pending && me && aboveId){ action = `<button class="btn" data-chal="${esc(aboveId)}" style="padding:6px 11px;font-size:12px;">⚔ Challenge ${esc(nameOf(aboveId).split(" ")[0])}</button>`; }
+      else if(pending && involved && (meId===String(pending.challengerId) || meId===String(pending.defenderId))){
+        // either of the two players reports the winner
+        action = `<div style="display:flex;gap:6px;flex-wrap:wrap;"><button class="btn pri" data-win="${esc(pending.challengerId)}" style="padding:5px 9px;font-size:11px;">${esc(nameOf(pending.challengerId).split(" ")[0])} won</button><button class="btn" data-win="${esc(pending.defenderId)}" style="padding:5px 9px;font-size:11px;">${esc(nameOf(pending.defenderId).split(" ")[0])} won</button></div>`;
+      } else if(involved){ action = `<span class="muted" style="font-size:11px;">in a challenge…</span>`; }
+      return `<div class="card" style="display:flex;align-items:center;gap:12px;padding:11px 13px;${me?'border-color:var(--brand);box-shadow:0 0 0 1px var(--brand) inset;':''}">
+        <div style="width:24px;text-align:center;font-weight:700;font-size:16px;color:${medal};">${i+1}</div>
+        ${avatar(nameOf(id), photoOf(id), 30)}
+        <div style="flex:1;min-width:0;"><div class="disp" style="font-size:15px;">${esc(nameOf(id))}${me?' <span class="muted" style="font-size:11px;">(you)</span>':''}</div><div class="muted" style="font-size:11px;">OVR ${overallOf(id)||"—"}</div></div>
+        ${action}
+      </div>`;
+    }).join("");
+
+    const banner = pending
+      ? `<div class="card" style="padding:12px 14px;margin-bottom:12px;border-color:var(--brand);"><span style="font-size:14px;">⚔ <b>${esc(nameOf(pending.challengerId))}</b> challenged <b>${esc(nameOf(pending.defenderId))}</b>.</span><div class="muted" style="font-size:12px;margin-top:3px;">Play it on court — then either player taps who won. Winner takes the higher rung.</div></div>`
+      : `<div class="muted" style="font-size:12px;margin-bottom:12px;">Challenge the player one rung above you. Win on court, climb the ladder. Tap your own row to challenge up.</div>`;
+
+    view.innerHTML = `
+      <div class="logo-txt" style="font-size:20px;margin-bottom:12px;">The Ladder</div>
+      ${tabsHtml()}
+      ${banner}
+      <div style="display:flex;flex-direction:column;gap:8px;">${rows}</div>
+      ${coach&&pending?`<button class="btn" id="ladCancel" style="margin-top:12px;padding:6px 12px;font-size:12px;">Cancel the challenge</button>`:""}
+      ${coach?`<button class="btn" id="ladReset" style="margin-top:12px;margin-left:8px;padding:6px 12px;font-size:12px;">Reset order to ratings</button>`:""}`;
+
+    wireTabs();
+    view.querySelectorAll("[data-chal]").forEach(el=>el.onclick=()=>challenge(el.dataset.chal));
+    view.querySelectorAll("[data-win]").forEach(el=>el.onclick=()=>resolve(el.dataset.win));
+    const cancel=document.getElementById("ladCancel"); if(cancel) cancel.onclick=()=>saveLadder({ pending:null }).catch(()=>{});
+    const reset=document.getElementById("ladReset"); if(reset) reset.onclick=()=>{ const o=players.map(p=>String(p.id)).sort((a,b)=>overallOf(b)-overallOf(a)); saveLadder({ order:o, pending:null }).catch(()=>{}); };
   };
 
   view.innerHTML = `<div class="muted">Loading leaderboard…</div>`;
   state.unsub.push(listenAllMeasurements((arr, err)=>{
     if(err){ view.innerHTML = `<div class="err">Couldn't load leaderboard: ${esc(err.message)}</div>`; return; }
-    all = arr || []; draw();
+    all = arr || [];
+    sessionsByUid = {};
+    all.forEach(m=>{ const k=String(m.uid); (sessionsByUid[k]=sessionsByUid[k]||[]).push(m); });
+    draw();
   }));
+  state.unsub.push(listenLadder((l)=>{ ladder = l; if(tab==="challenge") draw(); }));
 }
