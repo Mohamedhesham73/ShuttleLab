@@ -1,8 +1,17 @@
 # Court Lab — mobile expand + drag-to-aim crosshair
 
 **Date:** 2026-06-15
-**Status:** Approved (design)
-**Area:** `js/courtlab.js` (single file; no data-format or save/share changes)
+**Status:** Implemented
+**Area:** `js/court3d.js` — `mountProCourt` (the engine the live "Court Lab → Start
+building" flow actually uses, `kind:"pro3d"`). Also ported to the legacy
+`js/courtlab.js` (`mountCourtLab`, `kind:"lab"`) so old saved "lab" drills benefit too.
+No data-format or save/share changes.
+
+> Implementation note: the design was first written against `courtlab.js`, but the live
+> drill builder mounts `mountProCourt` from `court3d.js` (see `js/views/library.js` —
+> `openBuild("pro3d", …)`). The feature was therefore implemented in `court3d.js`. Because
+> that engine is landscape-projected, **Expand** also reframes to a portrait bird's-eye
+> camera (viewBox swaps to `460×820`) so the tall court fills a phone screen.
 
 ## Problem
 

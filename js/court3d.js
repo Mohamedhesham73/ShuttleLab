@@ -21,7 +21,8 @@
 
 const CT = { W:6.1, L:13.4, NET:6.7, SSLA:4.72, SSLB:8.68, DLSA:0.76, DLSB:12.64, SIN:0.46, SXL:5.64, CX:3.05, NETH:1.55, NETB:0.76 };
 const NETH_D = 1.34, NETB_D = 0.58;   // drawn net (slightly shorter, so cleared shots show daylight)
-const VW=760, VH=430;
+const VW0=760, VH0=430;               // inline (landscape) viewBox
+let VW=VW0, VH=VH0;                    // live viewBox — swaps to portrait while expanded
 
 // z0 = contact height, reach = how far in FRONT of the body the racket
 // meets the shuttle (overheads ~0.3 m above/ahead; net play a full
@@ -181,13 +182,15 @@ export function mountProCourt(container, opts){
   container.innerHTML = `
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
       ${Object.keys(CAMS).map(k=>`<span class="chip ${k==="broadcast"?"on":""}" id="${uid}cam_${k}">🎥 ${CAMS[k].name}</span>`).join("")}
+      ${editing?`<span class="chip" id="${uid}exp" title="Enlarge the court to draw on a phone">⤢ Expand</span>`:""}
       <span class="muted" style="font-size:12px;margin-left:auto;">${cat==="mixed"?"Mixed doubles":cat==="doubles"?"Doubles":"Singles"} · ${feed==="multi"?"Multi-shuttle":"Drill"}</span>
     </div>
     <div style="display:flex;justify-content:center;background:linear-gradient(#0a1822,#0c1410);border:1px solid var(--line);border-radius:14px;overflow:hidden;">
-      <svg id="${uid}svg" viewBox="0 0 ${VW} ${VH}" style="width:100%;height:auto;touch-action:manipulation;">
+      <svg id="${uid}svg" viewBox="0 0 ${VW} ${VH}" style="width:100%;height:auto;touch-action:${editing?"none":"manipulation"};">
         <g id="${uid}floor"></g><g id="${uid}zone"></g><g id="${uid}routes"></g>
         <g id="${uid}far"></g><g id="${uid}net"></g><g id="${uid}near"></g><g id="${uid}fx"></g><g id="${uid}chfx"></g>
         <circle id="${uid}ring" r="8" fill="none" stroke="#fff" stroke-width="1.6" stroke-dasharray="3 3" opacity="0"/>
+        <g id="${uid}cross" opacity="0" pointer-events="none"></g>
       </svg>
     </div>
     <div id="${uid}note" class="muted" style="font-size:13px;min-height:18px;margin-top:6px;text-align:center;"></div>
@@ -610,10 +613,10 @@ export function mountProCourt(container, opts){
 
   // ---------- edit ----------
   const curShot = ()=> editing ? gid("shot").value : "clear";
-  function svgXY(evt){
+  function svgXY(evt, dy){
     const svg=gid("svg"), pt=svg.createSVGPoint();
     const s=evt.touches&&evt.touches[0]?evt.touches[0]:evt;
-    pt.x=s.clientX; pt.y=s.clientY;
+    pt.x=s.clientX; pt.y=s.clientY+(dy||0);
     const m=svg.getScreenCTM(); if(!m) return null;
     const sp=pt.matrixTransform(m.inverse());
     return floorPoint(sp.x, sp.y);
@@ -624,9 +627,8 @@ export function mountProCourt(container, opts){
     players.forEach(pl=>{ out[pl.p]={x:snap.st[pl.p].x, y:snap.st[pl.p].y}; });
     return out;
   }
-  function onTap(evt){
-    if(!editing || playing) return;
-    const c=svgXY(evt); if(!c) return;
+  function placeAt(c){
+    if(!editing || playing || !c) return;
     // place-feeder tool
     if(fdOn){
       meta.feeder={x:+c.x.toFixed(2), y:+c.y.toFixed(2)};
@@ -710,6 +712,94 @@ export function mountProCourt(container, opts){
     afterStepsChange();
     hint("Added. Next shot, Move a player, or ▶ Play."+warn, !!warn);
   }
+  // ---------- drag-to-aim: press, drag (crosshair floats above the fingertip), release to place ----------
+  let dragging=false, expanded=false;
+  function aimPts(evt){
+    const lift=(evt.pointerType && evt.pointerType!=="mouse") ? -48 : 0;   // px the aim sits above a finger
+    let aim=svgXY(evt,lift);
+    if(!aim){ aim=svgXY(evt,0); return aim ? { aim, finger:null } : null; }
+    return { aim, finger: lift ? svgXY(evt,0) : null };
+  }
+  function crosshairLabel(){
+    if(fdOn) return "feeder";
+    if(ssOn) return ssSel ? "starts here" : "pick player";
+    if(mvOn) return mvSel ? "move to" : "pick player";
+    return pend ? "lands here" : "hit from";
+  }
+  const pickingPlayer = ()=> fdOn ? false : ssOn ? !ssSel : mvOn ? !mvSel : !pend;
+  function highlightNearest(c){
+    const P=curPositions();
+    const prefix = (!fdOn && !ssOn && !mvOn && feed==="multi") ? "A" : (!fdOn && !ssOn && !mvOn ? (c.y<CT.NET?"A":"B") : null);
+    let best=null, bd=1e9;
+    players.forEach(pl=>{ if(pl.feeder && !(ssOn||mvOn)) return; if(prefix && pl.p[0]!==prefix) return;
+      const q=P[pl.p]; if(!q) return; const d=(q.x-c.x)*(q.x-c.x)+(q.y-c.y)*(q.y-c.y); if(d<bd){ bd=d; best=pl.p; } });
+    const r=gid("ring"); if(!best){ return; }
+    const q=P[best], a=proj(q.x,q.y,0); if(!a) return;
+    r.setAttribute("cx",a[0]); r.setAttribute("cy",a[1]); r.setAttribute("opacity","1");
+  }
+  function renderCrosshair(c, finger, label){
+    const g=gid("cross"); if(!g) return;
+    const a=proj(c.x,c.y,0); if(!a){ g.setAttribute("opacity","0"); return; }
+    const m=gid("svg").getScreenCTM(), u=(m&&m.a)?1/m.a:1;     // user units per screen pixel
+    const R=13*u, lw=1.4*u, lw2=Math.max(2,(label.length*5.4+8))*u;
+    let h="";
+    if(finger){ const f=proj(finger.x,finger.y,0); if(f){
+      h+=`<line x1="${f[0]}" y1="${f[1]}" x2="${a[0]}" y2="${a[1]}" stroke="#fff" stroke-width="${u}" stroke-dasharray="${3*u} ${3*u}" opacity="0.65"/>`
+        +`<circle cx="${f[0]}" cy="${f[1]}" r="${2*u}" fill="rgba(255,255,255,0.35)"/>`; } }
+    h+=`<g transform="translate(${a[0]},${a[1]})">
+      <circle r="${R}" fill="none" stroke="#fff" stroke-width="${lw}"/>
+      <circle r="${1.6*u}" fill="#fff"/>
+      <line x1="0" y1="${-R*1.7}" x2="0" y2="${-R*0.7}" stroke="#fff" stroke-width="${lw}"/>
+      <line x1="0" y1="${R*0.7}" x2="0" y2="${R*1.7}" stroke="#fff" stroke-width="${lw}"/>
+      <line x1="${-R*1.7}" y1="0" x2="${-R*0.7}" y2="0" stroke="#fff" stroke-width="${lw}"/>
+      <line x1="${R*0.7}" y1="0" x2="${R*1.7}" y2="0" stroke="#fff" stroke-width="${lw}"/>
+      <g transform="translate(${R+3*u},${-R})"><rect width="${lw2}" height="${15*u}" rx="${3*u}" fill="#0c1410" opacity="0.85"/><text x="${5*u}" y="${11*u}" font-size="${9*u}" fill="#fff">${label}</text></g>
+    </g>`;
+    g.innerHTML=h; g.setAttribute("opacity","1");
+  }
+  function onDown(evt){
+    if(!editing || playing) return;
+    const pp=aimPts(evt); if(!pp) return;
+    dragging=true; try{ gid("svg").setPointerCapture(evt.pointerId); }catch(e){}
+    if(pickingPlayer()) highlightNearest(pp.aim);
+    renderCrosshair(pp.aim, pp.finger, crosshairLabel());
+  }
+  function onMove(evt){
+    if(!dragging) return;
+    const pp=aimPts(evt); if(!pp) return;
+    if(pickingPlayer()) highlightNearest(pp.aim);
+    renderCrosshair(pp.aim, pp.finger, crosshairLabel());
+  }
+  function onUp(evt){
+    if(!dragging) return; dragging=false;
+    try{ gid("svg").releasePointerCapture(evt.pointerId); }catch(e){}
+    gid("cross").setAttribute("opacity","0");
+    const pp=aimPts(evt); if(!pp) return;
+    placeAt(pp.aim);
+  }
+
+  // ---------- expand: fill the phone with a portrait bird's-eye while drawing ----------
+  function setExpanded(on){
+    expanded=on;
+    const svg=gid("svg");
+    if(on){
+      VW=460; VH=820;
+      container.style.cssText += ";position:fixed;inset:0;z-index:9999;background:#0a1410;padding:10px;overflow:auto;margin:0;";
+      svg.style.maxWidth="96vw"; svg.style.width="auto"; svg.style.height="86vh";
+      cam={ C:[...CAMS.bird.C], T:[...CAMS.bird.T], F:900 };
+      Object.keys(CAMS).forEach(k=>{ const ch=gid("cam_"+k); if(ch) ch.classList.toggle("on",k==="bird"); });
+    }else{
+      VW=VW0; VH=VH0;
+      ["position","inset","zIndex","background","padding","overflow","margin"].forEach(k=>container.style[k]="");
+      svg.style.height="auto"; svg.style.width="100%"; svg.style.maxWidth="";
+      cam={ C:[...CAMS.broadcast.C], T:[...CAMS.broadcast.T], F:CAMS.broadcast.F };
+      Object.keys(CAMS).forEach(k=>{ const ch=gid("cam_"+k); if(ch) ch.classList.toggle("on",k==="broadcast"); });
+    }
+    svg.setAttribute("viewBox",`0 0 ${VW} ${VH}`);
+    const chip=gid("exp"); if(chip){ chip.textContent = on?"⤡ Done":"⤢ Expand"; chip.classList.toggle("on",on); }
+    pend=null; calcBasis(); renderStatic(); renderDynamic(tl?Math.min(tCur,tl.total):0);
+  }
+
   // ---------- Drill DNA: training load computed from the real timeline ----------
   function computeDNA(){
     const t = tl || compile();
@@ -889,7 +979,8 @@ export function mountProCourt(container, opts){
   // ---------- camera ----------
   function setCam(key){
     Object.keys(CAMS).forEach(k=>gid("cam_"+k).classList.toggle("on",k===key));
-    const from={C:[...cam.C],T:[...cam.T],F:cam.F}, to=CAMS[key];
+    const from={C:[...cam.C],T:[...cam.T],F:cam.F};
+    const to = (expanded && key==="bird") ? { C:CAMS.bird.C, T:CAMS.bird.T, F:900 } : CAMS[key];
     const t0=performance.now();
     const tw=(ts)=>{
       if(!document.body.contains(gid("svg"))) return;
@@ -902,7 +993,10 @@ export function mountProCourt(container, opts){
   }
 
   // ---------- wire ----------
-  gid("svg").addEventListener("pointerdown", onTap);
+  gid("svg").addEventListener("pointerdown", onDown);
+  gid("svg").addEventListener("pointermove", onMove);
+  gid("svg").addEventListener("pointerup", onUp);
+  gid("svg").addEventListener("pointercancel", onUp);
   if(challenge) gid("svg").addEventListener("pointerdown", e=>{ if(ch && ch.phase==="await"){ const c=svgXY(e); if(c) chTap(c); } });
   Object.keys(CAMS).forEach(k=>{ gid("cam_"+k).onclick=()=>setCam(k); });
   const _chBtn=gid("chStart"); if(_chBtn) _chBtn.onclick=startChallenge;
@@ -916,6 +1010,7 @@ export function mountProCourt(container, opts){
       b.onclick=()=>{ drawColor=c; Array.prototype.forEach.call(gid("pal").querySelectorAll("button"),(x,i)=>{ x.style.border="2px solid "+(DCOLS[i]===drawColor?"#fff":"transparent"); }); };
       gid("pal").appendChild(b);
     });
+    gid("exp").onclick=()=>setExpanded(!expanded);
     gid("shot").onchange=()=>{ pend=null; renderStatic(); hint(SHOTS[curShot()].serve?"Serve: tap where the server stands — the legal box will light up.":"Tap where the shot is hit from."); };
     gid("ss").onclick=function(){ ssOn=!ssOn; ssSel=null; mvOn=false; mvSel=null; fdOn=false; gid("mv").classList.remove("on"); const f0=gid("fd"); if(f0) f0.classList.remove("on"); this.classList.toggle("on",ssOn); pend=null; renderStatic(); hint(ssOn?"Set start: tap a player, then tap where they should start. (Positions only — nothing plays.)":"Set start cancelled."); };
     gid("mv").onclick=function(){ mvOn=!mvOn; mvSel=null; ssOn=false; ssSel=null; fdOn=false; gid("ss").classList.remove("on"); const f=gid("fd"); if(f) f.classList.remove("on"); this.classList.toggle("on",mvOn); pend=null; renderStatic(); hint(mvOn?"Move: tap a player to pick them up.":"Move cancelled."); };
@@ -964,6 +1059,6 @@ export function mountProCourt(container, opts){
     getDNA: ()=> computeDNA(),
     hasShots: ()=> steps.some(s=>!s.rec),
     getView: ()=> "broadcast",
-    destroy: ()=> stop()
+    destroy: ()=>{ stop(); if(expanded){ ["position","inset","zIndex","background","padding","overflow","margin"].forEach(k=>container.style[k]=""); VW=VW0; VH=VH0; } }
   };
 }
