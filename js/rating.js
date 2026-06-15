@@ -11,10 +11,16 @@ const tById = id => TESTS.find(t=>t.id===id);
 
 // worst -> 30-ish rating, best -> 99-ish. For "lower is better" tests,
 // worst is the BIGGER (slower) number.
+// Standard tests anchored to published norms (weak→~40, elite→~99):
+//  beep test: teen avg 7-9, team-sport 12-14, elite endurance 15+ (topendsports)
+//  vertical jump: teen avg ~50cm, excellent >71cm
+//  standing long jump: teen mid 150-196cm, excellent adult >250cm
+// The three court tests below are the coach's CUSTOM drills — no public norms;
+// these worst/best are placeholders pending the coach's real times.
 export const BANDS = {
-  beep:    { worst:4,   best:14,  label:"Endurance",   icon:"🫁" },
-  vjump:   { worst:25,  best:70,  label:"Power",       icon:"💥" },
-  ljump:   { worst:150, best:280, label:"Drive",       icon:"🚀" },
+  beep:    { worst:5,   best:14,  label:"Endurance",   icon:"🫁" },
+  vjump:   { worst:28,  best:65,  label:"Power",       icon:"💥" },
+  ljump:   { worst:160, best:255, label:"Drive",       icon:"🚀" },
   inout:   { worst:18,  best:9,   label:"Agility",     icon:"⚡" },
   fbcourt: { worst:16,  best:8,   label:"Court speed", icon:"🏃" },
   fhbh:    { worst:20,  best:10,  label:"Reflexes",    icon:"🛡️" }
