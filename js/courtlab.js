@@ -170,13 +170,15 @@ export function mountCourtLab(container, opts){
   container.innerHTML = `
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
       ${VIEWS.map(v=>`<span class="chip ${view===v[0]?"on":""}" id="${uid}v_${v[0]}">${v[1]}</span>`).join("")}
+      ${editing?`<span class="chip" id="${uid}exp" title="Enlarge the court to draw on a phone">⤢ Expand</span>`:""}
       <span class="muted" style="font-size:12px;margin-left:auto;">${catName} · ${feed==="multi"?"Multi-shuttle":"Drill"}</span>
     </div>
     <div style="display:flex;justify-content:center;background:#0b1410;border:1px solid var(--line);border-radius:14px;overflow:hidden;">
-      <svg id="${uid}svg" viewBox="${proj.vb}" style="width:100%;max-width:${view==="bird"?"330":"720"}px;height:auto;touch-action:manipulation;">
+      <svg id="${uid}svg" viewBox="${proj.vb}" style="width:100%;max-width:${view==="bird"?"330":"720"}px;height:auto;touch-action:${editing?"none":"manipulation"};">
         <g id="${uid}floor"></g><g id="${uid}zone"></g><g id="${uid}lines"></g><g id="${uid}net"></g>
         <g id="${uid}routes"></g><g id="${uid}pl"></g>
         <circle id="${uid}ring" r="7" fill="none" stroke="#fff" stroke-width="1.6" stroke-dasharray="3 3" opacity="0"/>
+        <g id="${uid}cross" opacity="0" pointer-events="none"></g>
         <g id="${uid}sh" opacity="0"><path d="M 3 0 L -6 -4.4 L -3.4 0 L -6 4.4 Z" fill="#eef4ee" stroke="#0b1410" stroke-width="0.7"/><circle cx="3.6" cy="0" r="2.3" fill="#fff" stroke="#9aa49a" stroke-width="0.7"/></g>
         <text id="${uid}out" font-size="11" fill="#ff7b7b" text-anchor="middle" opacity="0">OUT</text>
       </svg>
@@ -294,10 +296,10 @@ export function mountCourtLab(container, opts){
     return best;
   }
 
-  function svgPoint(evt){
+  function svgPoint(evt, dy){
     const svg=gid("svg"), pt=svg.createSVGPoint();
     const s=evt.touches&&evt.touches[0]?evt.touches[0]:evt;
-    pt.x=s.clientX; pt.y=s.clientY;
+    pt.x=s.clientX; pt.y=s.clientY+(dy||0);
     const m=svg.getScreenCTM(); if(!m) return null;
     const sp=pt.matrixTransform(m.inverse());
     if(proj.inv){ const c=proj.inv(sp.x,sp.y); if(!c) return null; return { x:Math.max(0,Math.min(CT.W,c.x)), y:Math.max(0,Math.min(CT.L,c.y)) }; }
@@ -306,17 +308,17 @@ export function mountCourtLab(container, opts){
     return { x:CT.CX, y:Math.max(0,Math.min(CT.L,(sp.x-padX)/Sy)) };
   }
 
-  function onTap(evt){
+  // commit a placed court point through the tap-1 (pend) / tap-2 (addStep) pipeline
+  function commitPoint(c){
     if(!editing) return;
-    const c=svgPoint(evt); if(!c) return;
     const sh=shotById(curShot());
     if(!pend){
       let side = c.y < CT.NET ? "A" : "B";
-      if(feed==="multi" && side!=="A"){ hint("Tap on the training side (the feeder sends shuttles there).", true); return; }
+      if(feed==="multi" && side!=="A"){ hint("Place it on the training side (the feeder sends shuttles there).", true); return; }
       const hitter=nearestPlayer(c.x,c.y, feed==="multi" ? "A" : side);
       pend={ from:c, side, hitter: hitter?hitter.p:null };
-      if(sh.serve) hint("Legal box highlighted — diagonal service court ("+(cat==="singles"?"long & narrow":"short & wide")+"). Tap where the serve lands.");
-      else hint("Now tap where the "+sh.name.toLowerCase()+" lands.");
+      if(sh.serve) hint("Legal box highlighted — diagonal service court ("+(cat==="singles"?"long & narrow":"short & wide")+"). Drag where the serve lands.");
+      else hint("Now drag where the "+sh.name.toLowerCase()+" lands.");
       redraw(); return;
     }
     // tap 2 — target
@@ -325,8 +327,84 @@ export function mountCourtLab(container, opts){
       if(!inBox(box,c.x,c.y)){ hint("Illegal serve — it must land in the highlighted diagonal service court.", true); return; }
     }
     const sameSide = (c.y<CT.NET) === (pend.from.y<CT.NET);
-    if(sameSide && !sh.serve){ hint("The shuttle has to cross the net — tap a target on the other side.", true); return; }
+    if(sameSide && !sh.serve){ hint("The shuttle has to cross the net — drag a target on the other side.", true); return; }
     addStep(pend, c, sh);
+  }
+
+  // ---- drag-to-aim: press, drag (crosshair floats above the fingertip), release to place ----
+  let dragging=false;
+  const liftFor = evt => (evt.pointerType && evt.pointerType!=="mouse") ? -48 : 0;  // px the aim sits above a finger
+
+  // draw the floating crosshair at court point c; finger (court point) shows the connector when offset
+  function renderCrosshair(c, finger, phase){
+    const g=gid("cross"); if(!g) return;
+    const P=proj.pt, a=P(c.x,c.y,0);
+    const m=gid("svg").getScreenCTM(), u = (m && m.a) ? 1/m.a : 1;   // user units per screen pixel
+    const R=13*u, lw=1.4*u, lbl = phase===0 ? "hit from" : "lands here", lw2=Math.max(2,lbl.length*5.4+8)*u;
+    let h="";
+    if(finger){ const f=P(finger.x,finger.y,0);
+      h+=`<line x1="${f[0]}" y1="${f[1]}" x2="${a[0]}" y2="${a[1]}" stroke="#fff" stroke-width="${u}" stroke-dasharray="${3*u} ${3*u}" opacity="0.65"/>`
+        +`<circle cx="${f[0]}" cy="${f[1]}" r="${2*u}" fill="rgba(255,255,255,0.35)"/>`; }
+    h+=`<g transform="translate(${a[0]},${a[1]})">
+      <circle r="${R}" fill="none" stroke="#fff" stroke-width="${lw}"/>
+      <circle r="${1.6*u}" fill="#fff"/>
+      <line x1="0" y1="${-R*1.7}" x2="0" y2="${-R*0.7}" stroke="#fff" stroke-width="${lw}"/>
+      <line x1="0" y1="${R*0.7}" x2="0" y2="${R*1.7}" stroke="#fff" stroke-width="${lw}"/>
+      <line x1="${-R*1.7}" y1="0" x2="${-R*0.7}" y2="0" stroke="#fff" stroke-width="${lw}"/>
+      <line x1="${R*0.7}" y1="0" x2="${R*1.7}" y2="0" stroke="#fff" stroke-width="${lw}"/>
+      <g transform="translate(${R+3*u},${-R})"><rect width="${lw2}" height="${15*u}" rx="${3*u}" fill="#0b1410" opacity="0.85"/><text x="${5*u}" y="${11*u}" font-size="${9*u}" fill="#fff">${lbl}</text></g>
+    </g>`;
+    g.innerHTML=h; g.setAttribute("opacity","1");
+  }
+  function highlightNearest(c){
+    const side = feed==="multi" ? "A" : (c.y<CT.NET ? "A" : "B");
+    const n=nearestPlayer(c.x,c.y,side); if(!n) return;
+    const p=pos[n.p], cc=proj.pt(p.x,p.y,0), r=gid("ring");
+    r.setAttribute("cx",cc[0]); r.setAttribute("cy",cc[1]); r.setAttribute("opacity","1");
+  }
+  function aimPts(evt){
+    const lift=liftFor(evt), aim=svgPoint(evt,lift); if(!aim) return null;
+    return { aim, finger: lift ? svgPoint(evt,0) : null };
+  }
+  function onDown(evt){
+    if(!editing) return;
+    const pp=aimPts(evt); if(!pp) return;
+    dragging=true; try{ gid("svg").setPointerCapture(evt.pointerId); }catch(e){}
+    if(!pend) highlightNearest(pp.aim);
+    renderCrosshair(pp.aim, pp.finger, pend?1:0);
+  }
+  function onMove(evt){
+    if(!dragging) return;
+    const pp=aimPts(evt); if(!pp) return;
+    if(!pend) highlightNearest(pp.aim);
+    renderCrosshair(pp.aim, pp.finger, pend?1:0);
+  }
+  function onUp(evt){
+    if(!dragging) return; dragging=false;
+    try{ gid("svg").releasePointerCapture(evt.pointerId); }catch(e){}
+    gid("cross").setAttribute("opacity","0");
+    const pp=aimPts(evt); if(!pp) return;
+    commitPoint(pp.aim);
+  }
+
+  // ---- expand: blow the court up to fill the phone while drawing, then shrink back ----
+  let expanded=false;
+  function applyExpandSizing(){
+    const svg=gid("svg");
+    if(expanded){ svg.style.maxWidth="96vw"; svg.style.width="auto"; svg.style.height="82vh"; }
+    else { svg.style.height="auto"; svg.style.width="100%"; svg.style.maxWidth=(view==="bird"?"330px":"720px"); }
+  }
+  function setExpanded(on){
+    expanded=on;
+    if(on){
+      container.style.cssText += ";position:fixed;inset:0;z-index:9999;background:#0b1410;padding:10px;overflow:auto;margin:0;";
+    }else{
+      container.style.position=""; container.style.inset=""; container.style.zIndex="";
+      container.style.background=""; container.style.padding=""; container.style.overflow=""; container.style.margin="";
+    }
+    applyExpandSizing();
+    const chip=gid("exp"); if(chip){ chip.innerHTML = on?"⤡ Done":"⤢ Expand"; chip.classList.toggle("on",on); }
+    pend=null; redraw();
   }
 
   function addStep(p, target, sh){
@@ -425,7 +503,10 @@ export function mountCourtLab(container, opts){
   }
 
   // ---------- wiring ----------
-  gid("svg").addEventListener("pointerdown", onTap);
+  gid("svg").addEventListener("pointerdown", onDown);
+  gid("svg").addEventListener("pointermove", onMove);
+  gid("svg").addEventListener("pointerup", onUp);
+  gid("svg").addEventListener("pointercancel", onUp);
   function animLoop(t2){
     if(!anim.on) return;
     if(!document.body.contains(gid("svg"))){ stopAnim(); return; }
@@ -444,8 +525,9 @@ export function mountCourtLab(container, opts){
     playAll();
   };
   gid("rst").onclick=()=>{ stopAnim(); pos=positionsUpTo(cat,feed,steps,steps.length); pend=null; redraw(); };
-  VIEWS.forEach(v=>{ gid("v_"+v[0]).onclick=()=>{ if(view===v[0])return; view=v[0]; proj=makeProj(view); const svg=gid("svg"); svg.setAttribute("viewBox",proj.vb); svg.style.maxWidth = view==="bird"?"330px":"720px"; VIEWS.forEach(w=>gid("v_"+w[0]).classList.toggle("on",w[0]===view)); stopAnim(); pend=null; redraw(); }; });
+  VIEWS.forEach(v=>{ gid("v_"+v[0]).onclick=()=>{ if(view===v[0])return; view=v[0]; proj=makeProj(view); const svg=gid("svg"); svg.setAttribute("viewBox",proj.vb); applyExpandSizing(); VIEWS.forEach(w=>gid("v_"+w[0]).classList.toggle("on",w[0]===view)); stopAnim(); pend=null; redraw(); }; });
   if(editing){
+    gid("exp").onclick=()=>setExpanded(!expanded);
     gid("shot").onchange=()=>{ pend=null; tipLine(); redraw(); hint("Tap where the shot is hit from."); };
     gid("rot").onclick=function(){ this.classList.toggle("on"); };
     gid("undo").onclick=()=>{ steps.pop(); pos=positionsUpTo(cat,feed,steps,steps.length); pend=null; redraw(); };
@@ -462,6 +544,6 @@ export function mountCourtLab(container, opts){
     getPoints: ()=> JSON.parse(JSON.stringify(steps)),
     hasShots: ()=> steps.length>0,
     getView: ()=> view,
-    destroy: ()=> stopAnim()
+    destroy: ()=>{ stopAnim(); if(expanded){ ["position","inset","zIndex","background","padding","overflow","margin"].forEach(k=>container.style[k]=""); } }
   };
 }
