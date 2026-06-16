@@ -11,6 +11,7 @@ import { renderLibrary } from "./views/library.js";
 import { renderMatches } from "./views/matches.js";
 import { renderLeaderboard } from "./views/leaderboard.js";
 import { renderMindRoom } from "./views/mindroom.js";
+import { renderSupport } from "./views/support.js";
 
 const VIEWS = {
   dash: renderDashboard,
@@ -20,7 +21,8 @@ const VIEWS = {
   library: renderLibrary,
   matches: renderMatches,
   board: renderLeaderboard,
-  mind: renderMindRoom
+  mind: renderMindRoom,
+  support: renderSupport
 };
 
 function renderApp(){
@@ -49,16 +51,16 @@ watchAuth(async (fbUser)=>{
       console.error("Couldn't load the team roster from Firestore:", e);
       signOutUser(); return;
     }
-    state.roster = members.map(m=>({ id:m.id, name:m.name, role:m.role, photo:m.photo }));
+    state.roster = members.map(m=>({ id:m.id, name:m.name, role:m.role, photo:m.photo, uid:m.uid, assigned:m.assigned||[] }));
 
     const me = members.find(m=>m.uid === fbUser.uid);
     if(!me){ console.error("Signed-in account has no 'members' doc (UID "+fbUser.uid+")."); signOutUser(); return; }
 
-    const u = { id:me.id, name:me.name, role:me.role, photo:me.photo };
+    const u = { id:me.id, name:me.name, role:me.role, photo:me.photo, assigned:me.assigned||[] };
     const fresh = !state.user || String(state.user.id) !== String(u.id);
     state.user = u; state.uid = fbUser.uid; state.role = u.role; state.name = u.name;
     state.targetId = String(u.id); state.targetName = u.name;
-    if(fresh) state.view = u.role==="coach" ? "team" : "dash";
+    if(fresh) state.view = u.role==="coach" ? "team" : (u.role==="player" ? "dash" : "support");
     renderApp();
   }else{
     clearUnsub();
