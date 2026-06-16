@@ -2,9 +2,22 @@
   "name": "shuttlelab",
   "private": true,
   "type": "module",
+  "scripts": {
+    "test:rules": "firebase emulators:exec --only firestore \"node --test test/rules.test.mjs\""
+  },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.637.0",
     "@aws-sdk/s3-request-presigner": "^3.637.0",
     "firebase-admin": "^12.4.0"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^3.0.4",
+    "firebase": "^10.12.2",
+    "firebase-tools": "^13.0.0"
+  },
+  "overrides": {
+    "universal-analytics": {
+      "uuid": "9"
+    }
   }
 }
