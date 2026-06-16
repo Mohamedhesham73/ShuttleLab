@@ -71,9 +71,11 @@ service cloud.firestore {
     }
     match /progress/{id} {
       allow read:   if signedIn() && request.auth.uid in resource.data.readers;
+      // Only the channel's fitness trainer may log progress (a player is a member
+      // of fitness_player too, so members-check alone would let them post).
       allow create: if signedIn()
         && request.resource.data.staffUid == request.auth.uid
-        && request.auth.uid in chan(request.resource.data.channelId).members
+        && request.auth.uid == chan(request.resource.data.channelId).staffUid
         && request.resource.data.readers == chan(request.resource.data.channelId).readers;
       allow update, delete: if isCoach() || (signedIn() && resource.data.staffUid == request.auth.uid);
     }

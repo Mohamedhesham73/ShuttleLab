@@ -81,3 +81,10 @@ test("only coach provisions channels", async ()=>{
   await assertFails(setDoc(doc(as(MENTAL),"channels","x__y__z"), c));
   await assertSucceeds(setDoc(doc(as(COACH),"channels","x__y__z"), c));
 });
+test("only the fitness trainer logs progress; the player cannot", async ()=>{
+  const fpId = `fitness_player__${PLAYER}__${FIT}`;
+  await assertFails(addDoc(collection(as(PLAYER),"progress"),
+    { channelId:fpId, playerUid:PLAYER, staffUid:PLAYER, coachUid:COACH, title:"x", note:"", ts:1, readers:[COACH,FIT,PLAYER] }));
+  await assertSucceeds(addDoc(collection(as(FIT),"progress"),
+    { channelId:fpId, playerUid:PLAYER, staffUid:FIT, coachUid:COACH, title:"week 1", note:"good", ts:2, readers:[COACH,FIT,PLAYER] }));
+});
