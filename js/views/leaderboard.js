@@ -126,7 +126,7 @@ export function renderLeaderboard(){
 
   // ---------------- CHALLENGE LADDER ----------------
   const renderChallenge = ()=>{
-    const players = state.roster.filter(u=>u.role!=="coach");
+    const players = state.roster.filter(u=>u.role==="player");
     const nameOf = id => { const u=players.find(p=>String(p.id)===String(id)); return u?u.name:("#"+id); };
     const photoOf = id => { const u=players.find(p=>String(p.id)===String(id)); return u&&u.photo; };
     // order: saved, else seed by Overall rating; append any newcomers

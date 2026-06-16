@@ -158,6 +158,57 @@ export async function findVideoByHash(hash){
   return found;
 }
 
+// ---- Support team: roles, channels, messages, progress ----
+const CHAN_ID = (type, playerUid, staffUid) => `${type}__${playerUid}__${staffUid}`;
+
+// Coach sets a staff member's role + assigned players (members write = coach only).
+export function setStaffMember(uid, data){ return setDoc(doc(db,"members",String(uid)), data, { merge:true }); }
+
+// Coach provisions the channels for one (player, staff) pairing. Idempotent.
+export async function provisionChannels(coachUid, player, staff){
+  const base = { playerUid:player.uid, playerName:player.name||"", staffUid:staff.uid, staffName:staff.name||"", coachUid:String(coachUid), createdAt:Date.now() };
+  const defs = staff.role==="mental_coach"
+    ? [["coach_mental", [coachUid,staff.uid], [coachUid,staff.uid]],
+       ["mental_player",[staff.uid,player.uid], [coachUid,staff.uid,player.uid]]]
+    : [["coach_fitness", [coachUid,staff.uid], [coachUid,staff.uid,player.uid]],
+       ["fitness_player",[staff.uid,player.uid], [coachUid,staff.uid,player.uid]]];
+  for(const [type,members,readers] of defs){
+    await setDoc(doc(db,"channels",CHAN_ID(type,player.uid,staff.uid)),
+      { ...base, type, members, readers }, { merge:true });
+  }
+}
+
+// Channels this user may see (readers contains them).
+export function listenMyChannels(uid, cb){
+  return onSnapshot(query(collection(db,"channels"), where("readers","array-contains",String(uid))),
+    s=>{ const a=[]; s.forEach(d=>a.push({ id:d.id, ...d.data() })); cb(a); },
+    err=>cb(null, err));
+}
+
+// Live messages in one channel, oldest->newest.
+export function listenChat(channelId, cb){
+  return onSnapshot(query(collection(db,"chatMessages"), where("channelId","==",channelId)),
+    s=>{ const a=[]; s.forEach(d=>a.push({ id:d.id, ...d.data() })); a.sort((x,y)=>(x.ts||0)-(y.ts||0)); cb(a); },
+    err=>cb(null, err));
+}
+export function sendChat(channel, fromUid, text){
+  return addDoc(collection(db,"chatMessages"),
+    { channelId:channel.id, fromUid:String(fromUid), text:String(text), ts:Date.now(), readers:channel.readers });
+}
+
+// Fitness progress for a player (readers rule gates who sees it).
+export function listenProgress(playerUid, cb){
+  return onSnapshot(query(collection(db,"progress"), where("playerUid","==",String(playerUid))),
+    s=>{ const a=[]; s.forEach(d=>a.push({ id:d.id, ...d.data() })); a.sort((x,y)=>(y.ts||0)-(x.ts||0)); cb(a); },
+    err=>cb(null, err));
+}
+export function addProgress(fitnessChannel, fromUid, title, note){
+  return addDoc(collection(db,"progress"),
+    { channelId:fitnessChannel.id, playerUid:fitnessChannel.playerUid, staffUid:String(fromUid),
+      coachUid:fitnessChannel.coachUid, title:String(title||""), note:String(note||""),
+      ts:Date.now(), readers:fitnessChannel.readers });
+}
+
 // Resolve a playable URL for a video source.
 //  - public bucket: source.url is directly playable
 //  - private bucket: fetch a short-lived signed GET URL from our API
