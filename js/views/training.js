@@ -66,7 +66,7 @@ function timelineHTML(plan, tours){
 export function renderTraining(){
   const view = document.getElementById("view");
   const coach = state.role==="coach";
-  const roster = state.roster.filter(u=>u.role!=="coach");
+  const roster = state.roster.filter(u=>u.role==="player");
   let msgUnsub = null;          // live messages listener (re-pointed on player switch)
   let TOURS = TOURNAMENTS;      // effective schedule (coach overrides, else code default)
 

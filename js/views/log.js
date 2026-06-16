@@ -5,7 +5,7 @@ import { saveMeasurement } from "../data.js";
 export function renderLog(){
   const view = document.getElementById("view");
   const today = new Date().toISOString().slice(0,10);
-  const roster = state.roster.filter(u=>u.role!=="coach");
+  const roster = state.roster.filter(u=>u.role==="player");
 
   const inputs = TESTS.map(t=>{
     if(t.multi){

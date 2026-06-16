@@ -5,7 +5,7 @@ import { cardFromSessions, tierColor, overallOfSession } from "../rating.js";
 
 export function renderTeam(){
   const view = document.getElementById("view");
-  const roster = state.roster.filter(u=>u.role!=="coach");
+  const roster = state.roster.filter(u=>u.role==="player");
   let board = TESTS[0].id;
   let latestByUid = {}, sessionsByUid = {};
 
