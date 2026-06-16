@@ -1,4 +1,4 @@
-import { state, esc, fmtDate, toast } from "../core.js";
+import { state, esc, fmtDate, toast, autoGrow } from "../core.js";
 import { TOURNAMENTS } from "../config.js";
 import { listenTraining, postTraining, listenPlan, getPlan, savePlan, listenSchedule, saveSchedule } from "../data.js";
 
@@ -114,9 +114,12 @@ export function renderTraining(){
   }
 
   // ============================ COACH VIEW ============================
+  const TARGET_MAX = 2000;
   let curUid = roster[0] ? String(roster[0].id) : null;
   let plan = { target:"", blocks:[], tournaments:[] };
+  let draftTarget = "";                 // in-progress target text (separate from the saved one)
   let editingSchedule = false;
+  const playerName = uid => { const p=roster.find(r=>String(r.id)===String(uid)); return p?p.name:""; };
 
   view.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
@@ -126,12 +129,14 @@ export function renderTraining(){
     <div id="planEdit"><div class="muted">Loading…</div></div>
     <div class="card" style="padding:16px;margin-top:16px;">
       <div class="disp" style="font-size:15px;margin-bottom:10px;">Message the player</div>
-      <textarea id="msgText" rows="2" placeholder="A quick note for this player…" style="margin-bottom:10px;resize:vertical;"></textarea>
+      <textarea id="msgText" rows="2" placeholder="A quick note for this player…" style="margin-bottom:10px;resize:none;overflow:hidden;"></textarea>
       <button class="btn pri" id="msgPost">Post</button><div id="msgErr" class="err"></div>
       <div id="msgList" style="margin-top:12px;"></div>
     </div>`;
 
   if(!roster.length){ document.getElementById("planEdit").innerHTML = `<div class="muted">No players on the roster yet.</div>`; return; }
+
+  autoGrow(document.getElementById("msgText"));
 
   const sel = document.getElementById("trainSel");
   sel.onchange = ()=>{ curUid = sel.value; selectPlayer(curUid); };
@@ -156,11 +161,13 @@ export function renderTraining(){
     document.getElementById("planEdit").innerHTML = `<div class="muted">Loading…</div>`;
     try{ plan = await getPlan(uid); }catch(e){ plan = {}; }
     plan = plan || {}; plan.blocks = plan.blocks||[]; plan.tournaments = plan.tournaments||[];
+    draftTarget = "";                   // fresh box for each player
     renderEdit();
     startMessages(uid);
   }
 
-  function syncTargetFromDOM(){ const t=document.getElementById("tgtText"); if(t) plan.target = t.value; }
+  // preserve the in-progress target text across re-renders triggered by other edits
+  function captureDraft(){ const t=document.getElementById("tgtText"); if(t) draftTarget = t.value; }
 
   function renderEdit(){
     const el = document.getElementById("planEdit");
@@ -171,9 +178,16 @@ export function renderTraining(){
       ${timelineHTML(plan, TOURS)}
       <div class="card" style="padding:16px;margin-bottom:14px;">
         <div class="disp" style="font-size:15px;margin-bottom:8px;">🎯 Season target</div>
-        <textarea id="tgtText" rows="3" placeholder="e.g. Reach beep level 11 · medal at U17 singles · sharper net play" style="resize:vertical;margin-bottom:10px;">${esc(plan.target||"")}</textarea>
-        <button class="btn pri" id="tgtSave">Save target</button>
-        <span id="tgtMsg" class="muted" style="margin-left:10px;font-size:13px;"></span>
+        ${plan.target ? `<div style="border:1px solid var(--line);border-left:3px solid var(--brand);border-radius:10px;padding:10px 12px;margin-bottom:10px;">
+          <div class="muted" style="font-size:12px;margin-bottom:3px;">Current target for ${esc(playerName(curUid))}${plan.targetAt?` · saved ${esc(fmtDate(new Date(plan.targetAt).toISOString().slice(0,10)))}`:""}</div>
+          <div style="font-size:14px;line-height:1.55;white-space:pre-wrap;">${esc(plan.target)}</div>
+        </div>` : ""}
+        <textarea id="tgtText" rows="2" maxlength="${TARGET_MAX}" placeholder="${plan.target?"Write a new target to replace the current one…":"e.g. Reach beep level 11 · medal at U17 singles · sharper net play"}" style="resize:none;overflow:hidden;margin-bottom:8px;">${esc(draftTarget)}</textarea>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <button class="btn pri" id="tgtSave">${plan.target?"Update target":"Save target"}</button>
+          <span id="tgtCount" class="muted" style="font-size:12px;">${draftTarget.length} / ${TARGET_MAX}</span>
+          <span id="tgtMsg" class="muted" style="font-size:13px;"></span>
+        </div>
       </div>
 
       <div class="card" style="padding:16px;margin-bottom:14px;">
@@ -195,7 +209,7 @@ export function renderTraining(){
             <div style="flex:1;min-width:130px;"><label style="font-size:12px;">End</label><input type="date" id="blkEnd"></div>
           </div>
           <input id="blkTitle" placeholder="Focus (e.g. Base endurance block)" style="margin-bottom:8px;">
-          <textarea id="blkDetails" rows="2" placeholder="What to work on this phase…" style="resize:vertical;margin-bottom:8px;"></textarea>
+          <textarea id="blkDetails" rows="2" placeholder="What to work on this phase…" style="resize:none;overflow:hidden;margin-bottom:8px;"></textarea>
           <button class="btn" id="blkAdd">+ Add phase</button><span id="blkErr" class="err"></span>
         </div>
       </div>
@@ -229,10 +243,25 @@ export function renderTraining(){
           </div>`).join("")}
       </div>` : ``}`;
 
+    {
+      const ta=document.getElementById("tgtText"), count=document.getElementById("tgtCount");
+      autoGrow(ta, el=>{ draftTarget = el.value; if(count) count.textContent = el.value.length+" / "+TARGET_MAX; });
+      autoGrow(document.getElementById("blkDetails"));
+    }
+
     document.getElementById("tgtSave").onclick = async ()=>{
-      syncTargetFromDOM();
-      const m=document.getElementById("tgtMsg"); m.style.color="var(--muted)"; m.textContent="Saving…";
-      try{ await savePlan(curUid, { target: plan.target }); m.style.color="var(--brand)"; m.textContent="Saved."; }
+      captureDraft();
+      const m=document.getElementById("tgtMsg");
+      const text=(draftTarget||"").trim();
+      if(!text){ m.style.color="var(--down)"; m.textContent="Write a target first."; return; }
+      m.style.color="var(--muted)"; m.textContent="Saving…";
+      try{
+        const at=Date.now();
+        await savePlan(curUid, { target:text, targetAt:at });
+        plan.target=text; plan.targetAt=at; draftTarget="";   // saved → clear the box, show the card
+        renderEdit();
+        const m2=document.getElementById("tgtMsg"); if(m2){ m2.style.color="var(--brand)"; m2.textContent="Saved."; }
+      }
       catch(e){ m.style.color="var(--down)"; m.textContent="Couldn't save: "+(e.message||e); }
     };
 
@@ -244,7 +273,7 @@ export function renderTraining(){
       const errEl=document.getElementById("blkErr"); errEl.textContent="";
       if(!start){ errEl.textContent=" Pick a start date."; return; }
       if(!title){ errEl.textContent=" Give it a focus."; return; }
-      syncTargetFromDOM();
+      captureDraft();
       plan.blocks = (plan.blocks||[]).concat([{ id:Date.now(), start, end, title, details }]);
       try{ await savePlan(curUid, { blocks: plan.blocks }); renderEdit(); }
       catch(e){ errEl.textContent=" Couldn't save: "+(e.message||e); }
@@ -252,7 +281,7 @@ export function renderTraining(){
 
     el.querySelectorAll("[data-del]").forEach(btn=>{
       btn.onclick = async ()=>{
-        syncTargetFromDOM();
+        captureDraft();
         plan.blocks = (plan.blocks||[]).filter(b=>String(b.id)!==String(btn.dataset.del));
         try{ await savePlan(curUid, { blocks: plan.blocks }); renderEdit(); }catch(e){ toast("Couldn't save — check your connection.","err"); }
       };
@@ -260,7 +289,7 @@ export function renderTraining(){
 
     el.querySelectorAll("[data-tg]").forEach(row=>{
       row.onclick = async ()=>{
-        syncTargetFromDOM();
+        captureDraft();
         const id=row.dataset.tg, set=new Set(plan.tournaments||[]);
         if(set.has(id)) set.delete(id); else set.add(id);
         plan.tournaments = Array.from(set);

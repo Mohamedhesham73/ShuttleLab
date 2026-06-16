@@ -45,6 +45,18 @@ export function toast(msg, kind){
   clearTimeout(el._t); el._t = setTimeout(()=>{ el.style.opacity = "0"; }, 2800);
 }
 
+// Make a textarea grow with its content (Twitter-style) instead of showing a
+// drag-to-resize handle. Pass an optional onInput callback (e.g. a char counter).
+export function autoGrow(el, onInput){
+  if(!el) return;
+  el.style.resize = "none";
+  el.style.overflow = "hidden";
+  const fit = ()=>{ el.style.height = "auto"; el.style.height = Math.max(el.scrollHeight, 40) + "px"; };
+  el.addEventListener("input", ()=>{ fit(); if(onInput) onInput(el); });
+  requestAnimationFrame(fit);   // size correctly once laid out
+  return fit;
+}
+
 // Detach all live Firestore listeners (called on every view change).
 export function clearUnsub(){
   state.unsub.forEach(u=>{ try{ u(); }catch(e){} });

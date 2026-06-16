@@ -1,4 +1,4 @@
-import { state, esc, toast } from "../core.js";
+import { state, esc, toast, autoGrow } from "../core.js";
 import { listenGiftJar, saveGiftJar, getPrivate, savePrivate, addMessage, listenMessages } from "../data.js";
 
 // =============================================================
@@ -218,13 +218,14 @@ export function renderMindRoom(){
       wrap.innerHTML = `
         <div style="color:#fff;font-size:17px;">Tell ${esc(coachName.split(" ")[0])} anything.</div>
         <div style="color:#fff;opacity:.7;font-size:12px;margin-top:-4px;">It goes straight to your coach — no one else sees it.</div>
-        <textarea id="mrMsg" rows="4" placeholder="What's on your mind?" style="width:100%;max-width:300px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.2);border-radius:12px;color:#fff;padding:11px;font-size:14px;resize:vertical;"></textarea>
+        <textarea id="mrMsg" rows="4" placeholder="What's on your mind?" style="width:100%;max-width:300px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.2);border-radius:12px;color:#fff;padding:11px;font-size:14px;resize:none;overflow:hidden;"></textarea>
         <div style="display:flex;gap:10px;">
           <button id="mrSend" style="background:var(--brand);color:#0b0e0c;border:none;border-radius:20px;padding:9px 18px;font-size:13px;font-weight:600;">Send</button>
           <button id="mrMsgClose" style="background:transparent;color:#fff;opacity:.75;border:1px solid rgba(255,255,255,.25);border-radius:20px;padding:9px 16px;font-size:13px;">close</button>
         </div>
         <div id="mrMsgOk" style="color:var(--brand);font-size:13px;min-height:16px;"></div>`;
       document.getElementById("mrRoom").appendChild(wrap);
+      autoGrow(wrap.querySelector("#mrMsg"));
       wrap.querySelector("#mrMsgClose").onclick = ()=> wrap.remove();
       wrap.querySelector("#mrSend").onclick = async ()=>{
         const txt = wrap.querySelector("#mrMsg").value.trim();
@@ -350,7 +351,7 @@ export function renderMindRoom(){
         </div>
         <div class="muted" style="font-size:13px;margin-bottom:14px;">These get mixed into the gifts your players open in the Mind Room, signed by you. Speak to them like only you can.</div>
         <div class="card" style="padding:16px;margin-bottom:14px;">
-          <textarea id="jarText" rows="3" placeholder="e.g. I've seen you do the impossible in training. Tonight, just let it out." style="resize:vertical;margin-bottom:10px;"></textarea>
+          <textarea id="jarText" rows="3" placeholder="e.g. I've seen you do the impossible in training. Tonight, just let it out." style="resize:none;overflow:hidden;margin-bottom:10px;"></textarea>
           <button class="btn pri" id="jarAdd">Add to the jar</button>
         </div>
         <div style="display:flex;flex-direction:column;gap:8px;">
@@ -360,6 +361,7 @@ export function renderMindRoom(){
             </div>`).join("") : `<div class="muted" style="font-size:13px;">The jar is empty — your players currently get the built-in encouragements. Add your own to make it personal.</div>`}
         </div>`;
       document.getElementById("jarBack").onclick = ()=> renderRoom();
+      autoGrow(document.getElementById("jarText"));
       document.getElementById("jarAdd").onclick = async ()=>{
         const t=document.getElementById("jarText").value.trim(); if(!t) return;
         list = list.concat([t]); coachGifts = list;
