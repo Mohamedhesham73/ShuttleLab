@@ -251,6 +251,7 @@ export function renderMatches(){
         <span class="chip on">${esc(work.type||"Match")}</span>
       </div>
 
+      <div id="flmWrap">
       <div id="flmStage" style="position:relative;width:100%;aspect-ratio:16/9;border-radius:14px;overflow:hidden;background:#000;">
         <div id="mediaMount" style="position:absolute;inset:0;width:100%;height:100%;"></div>
         <svg id="flmOv" viewBox="0 0 ${DW} ${DH}" style="position:absolute;inset:0;width:100%;height:100%;touch-action:none;pointer-events:${coach?"auto":"none"};"></svg>
@@ -279,8 +280,10 @@ export function renderMatches(){
         <button class="btn" id="flmPlay" style="padding:8px 14px;">▶ Play</button>
         <span id="flmTime" class="muted" style="font-size:13px;font-variant-numeric:tabular-nums;">0:00 / 0:00</span>
         <select id="flmSpd" style="width:auto;"><option value="1">1×</option><option value="0.5">0.5×</option><option value="0.25">0.25×</option></select>
+        <button class="btn" id="flmExpand" title="Enlarge the film for your phone" style="padding:8px 12px;">⤢ Expand</button>
         ${coach ? `<button class="btn pri" id="flmAdd" style="margin-left:auto;">+ Note here</button>` : ``}
       </div>
+      <div id="flmRotHint" class="muted" style="display:none;font-size:12px;margin-top:6px;text-align:center;">↻ Rotate your phone to fill the screen.</div>
 
       ${coach ? `<div id="flmEditor" class="card" style="padding:14px;margin-top:14px;display:none;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
@@ -322,6 +325,7 @@ export function renderMatches(){
         <div class="muted" style="font-size:12px;margin-bottom:6px;">Coaching points</div>
         <div id="flmList" style="display:flex;flex-direction:column;gap:6px;"></div>
       </div>
+      </div><!-- /flmWrap -->
 
       ${coach ? `<div class="card" style="padding:14px;margin-top:16px;">
         <div class="disp" style="font-size:15px;margin-bottom:10px;">Send to</div>
@@ -617,6 +621,28 @@ export function renderMatches(){
     document.getElementById("flmPlay").onclick=()=>{ playing?pauseV():playV(); };
     document.getElementById("flmResume").onclick=()=>{ document.getElementById("flmNote").style.display="none"; playV(); };
     document.getElementById("flmScrub").oninput=function(){ seek(this.value/1000*(getDur()||0), true); };
+
+    // ----- expand: fill the phone with the film (controls come along; rotate for landscape) -----
+    let filmExpanded=false;
+    function setFilmExpanded(on){
+      filmExpanded=on;
+      const wrap=document.getElementById("flmWrap"), btn=document.getElementById("flmExpand"), hint=document.getElementById("flmRotHint");
+      if(!wrap) return;
+      const st=document.getElementById("flmStage");
+      if(on){
+        wrap.style.cssText += ";position:fixed;inset:0;z-index:9998;background:#000;overflow:auto;padding:10px;margin:0;";
+        // letterbox: fit to screen height so the video + controls both stay on screen
+        if(st){ st.style.width="min(100%, calc(72vh * 16 / 9))"; st.style.margin="0 auto"; }
+        if(btn){ btn.textContent="⤡ Done"; btn.classList.add("on"); }
+        if(hint) hint.style.display="block";
+      }else{
+        ["position","inset","zIndex","background","overflow","padding","margin"].forEach(k=>wrap.style[k]="");
+        if(st){ st.style.width="100%"; st.style.margin=""; }
+        if(btn){ btn.textContent="⤢ Expand"; btn.classList.remove("on"); }
+        if(hint) hint.style.display="none";
+      }
+    }
+    document.getElementById("flmExpand").onclick=()=>setFilmExpanded(!filmExpanded);
 
     // ----- create the media (YouTube or HTML5) -----
     const mount=document.getElementById("mediaMount");
