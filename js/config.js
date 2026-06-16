@@ -36,9 +36,9 @@ export const TESTS = [
   { id:"beep",   name:"Beep test",                   unit:"level", higher:true,  multi:false },
   { id:"vjump",  name:"Vertical jump",               unit:"cm",    higher:true,  multi:true  },
   { id:"ljump",  name:"Standing long jump",          unit:"cm",    higher:true,  multi:true  },
-  { id:"inout",  name:"In-out agility",              unit:"s",     higher:false, multi:true  },
-  { id:"fbcourt",name:"Forward & backward court",    unit:"s",     higher:false, multi:true  },
-  { id:"fhbh",   name:"Forehand & backhand defense", unit:"s",     higher:false, multi:true  },
+  { id:"fastfeet", name:"Fast feet",            unit:"s",     higher:false, multi:true  },
+  { id:"frontback",name:"Front-to-back speed",  unit:"s",     higher:false, multi:true  },
+  { id:"lateral",  name:"Lateral speed",        unit:"s",     higher:false, multi:true  },
 ];
 
 // Max video upload size (MB). Enforced client-side and in the Vercel API.

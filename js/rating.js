@@ -15,15 +15,17 @@ const tById = id => TESTS.find(t=>t.id===id);
 //  beep test: teen avg 7-9, team-sport 12-14, elite endurance 15+ (topendsports)
 //  vertical jump: teen avg ~50cm, excellent >71cm
 //  standing long jump: teen mid 150-196cm, excellent adult >250cm
-// The three court tests below are the coach's CUSTOM drills — no public norms;
-// these worst/best are placeholders pending the coach's real times.
+// The three speed tests below are the coach's own court tests (timed, lower=better).
+// No official BWF/public worst-best table exists for them, so the BEST end is
+// anchored to elite performance (Fast feet also matches the Quick Feet Test,
+// "excellent" <2.8s) and the WORST end is a developing-junior estimate — tune freely.
 export const BANDS = {
-  beep:    { worst:5,   best:14,  label:"Endurance",   icon:"🫁" },
-  vjump:   { worst:28,  best:65,  label:"Power",       icon:"💥" },
-  ljump:   { worst:160, best:255, label:"Drive",       icon:"🚀" },
-  inout:   { worst:18,  best:9,   label:"Agility",     icon:"⚡" },
-  fbcourt: { worst:16,  best:8,   label:"Court speed", icon:"🏃" },
-  fhbh:    { worst:20,  best:10,  label:"Reflexes",    icon:"🛡️" }
+  beep:     { worst:5,    best:14,  label:"Endurance",  icon:"🫁" },
+  vjump:    { worst:28,   best:65,  label:"Power",      icon:"💥" },
+  ljump:    { worst:160,  best:255, label:"Drive",      icon:"🚀" },
+  fastfeet: { worst:4.8,  best:2.4, label:"Foot speed", icon:"👟" },
+  frontback:{ worst:14,   best:8,   label:"Front–back", icon:"🏃" },
+  lateral:  { worst:15,   best:9,   label:"Lateral",    icon:"↔️" }
 };
 
 export function statRating(id, val){
