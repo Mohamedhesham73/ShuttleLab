@@ -1,6 +1,6 @@
 import { state, clearUnsub } from "./core.js";
 import { watchAuth, signOutUser } from "./auth.js";
-import { loadMembers } from "./data.js";
+import { loadMembers, getMember } from "./data.js";
 import { header, wireShell } from "./shell.js";
 import { renderLogin } from "./views/login.js";
 import { renderDashboard } from "./views/dashboard.js";
@@ -42,19 +42,31 @@ state._render = renderApp;
 // logged in — no manual localStorage handling needed.
 watchAuth(async (fbUser)=>{
   if(fbUser){
-    // Load the roster from Firestore (protected: only signed-in users can read it),
-    // then figure out who this account is by matching their Auth UID.
-    let members;
+    // First load just THIS account's member doc (everyone may read their own).
+    // Support staff are not allowed to list the whole roster, so we never call
+    // loadMembers() for them — only the coach and players load the full squad.
+    let me;
     try{
-      members = await loadMembers();
+      me = await getMember(fbUser.uid);
     }catch(e){
-      console.error("Couldn't load the team roster from Firestore:", e);
+      console.error("Couldn't load your account from Firestore:", e);
       signOutUser(); return;
     }
-    state.roster = members.map(m=>({ id:m.id, name:m.name, role:m.role, photo:m.photo, uid:m.uid, assigned:m.assigned||[] }));
-
-    const me = members.find(m=>m.uid === fbUser.uid);
     if(!me){ console.error("Signed-in account has no 'members' doc (UID "+fbUser.uid+")."); signOutUser(); return; }
+
+    const isStaff = me.role==="mental_coach" || me.role==="fitness_trainer";
+    if(isStaff){
+      state.roster = [];   // staff don't need (and can't read) the squad
+    }else{
+      let members;
+      try{
+        members = await loadMembers();
+      }catch(e){
+        console.error("Couldn't load the team roster from Firestore:", e);
+        signOutUser(); return;
+      }
+      state.roster = members.map(m=>({ id:m.id, name:m.name, role:m.role, photo:m.photo, uid:m.uid, assigned:m.assigned||[] }));
+    }
 
     const u = { id:me.id, name:me.name, role:me.role, photo:me.photo, assigned:me.assigned||[] };
     const fresh = !state.user || String(state.user.id) !== String(u.id);

@@ -23,7 +23,7 @@ function mountChat(el, channel){
   autoGrow(input);
   const canPost = channel.members.includes(String(state.uid));
   if(!canPost){ input.disabled=true; input.placeholder="You can read this conversation but not post in it."; el.querySelector("#chatSend").style.display="none"; }
-  const unsub = listenChat(channel.id, (msgs, err)=>{
+  const unsub = listenChat(channel.id, state.uid, (msgs, err)=>{
     if(err){ list.innerHTML=`<div class="err">${esc(err.message)}</div>`; return; }
     list.innerHTML = (msgs||[]).map(m=>{
       const mine = String(m.fromUid)===String(state.uid);
@@ -168,7 +168,7 @@ function mountProgress(el, playerUid, fitnessChannel){
       catch(e){ alert("Couldn't save: "+(e.message||e)); }
     };
   }
-  state.unsub.push(listenProgress(playerUid, (rows, err)=>{
+  state.unsub.push(listenProgress(playerUid, state.uid, (rows, err)=>{
     const list=el.querySelector("#progList"); if(!list) return;
     if(err){ list.innerHTML=`<div class="err">${esc(err.message)}</div>`; return; }
     list.innerHTML = (rows||[]).length ? rows.map(p=>`

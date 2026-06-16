@@ -12,6 +12,12 @@ export async function loadMembers(){
   const a = []; snap.forEach(d=>a.push({ uid:d.id, ...d.data() }));
   return a;
 }
+// Read ONE member doc (everyone may read their own — used so support staff,
+// who cannot list the whole roster, can still load their own account).
+export async function getMember(uid){
+  const d = await getDoc(doc(db,"members",String(uid)));
+  return d.exists() ? { uid:d.id, ...d.data() } : null;
+}
 
 // ---- Measurements ----
 export function listenMeasurements(uid, cb){
@@ -185,10 +191,13 @@ export function listenMyChannels(uid, cb){
     err=>cb(null, err));
 }
 
-// Live messages in one channel, oldest->newest.
-export function listenChat(channelId, cb){
-  return onSnapshot(query(collection(db,"chatMessages"), where("channelId","==",channelId)),
-    s=>{ const a=[]; s.forEach(d=>a.push({ id:d.id, ...d.data() })); a.sort((x,y)=>(x.ts||0)-(y.ts||0)); cb(a); },
+// Live messages in one channel, oldest->newest. Query by readers (not channelId)
+// so the security rule (uid in readers) can prove the query safe — Firestore
+// rules are NOT filters, so a channelId-only query is denied. Filter to the
+// channel client-side.
+export function listenChat(channelId, uid, cb){
+  return onSnapshot(query(collection(db,"chatMessages"), where("readers","array-contains",String(uid))),
+    s=>{ const a=[]; s.forEach(d=>{ const m={ id:d.id, ...d.data() }; if(m.channelId===channelId) a.push(m); }); a.sort((x,y)=>(x.ts||0)-(y.ts||0)); cb(a); },
     err=>cb(null, err));
 }
 export function sendChat(channel, fromUid, text){
@@ -196,10 +205,11 @@ export function sendChat(channel, fromUid, text){
     { channelId:channel.id, fromUid:String(fromUid), text:String(text), ts:Date.now(), readers:channel.readers });
 }
 
-// Fitness progress for a player (readers rule gates who sees it).
-export function listenProgress(playerUid, cb){
-  return onSnapshot(query(collection(db,"progress"), where("playerUid","==",String(playerUid))),
-    s=>{ const a=[]; s.forEach(d=>a.push({ id:d.id, ...d.data() })); a.sort((x,y)=>(y.ts||0)-(x.ts||0)); cb(a); },
+// Fitness progress for a player. Query by readers (same reason as listenChat),
+// filter to the player client-side.
+export function listenProgress(playerUid, uid, cb){
+  return onSnapshot(query(collection(db,"progress"), where("readers","array-contains",String(uid))),
+    s=>{ const a=[]; s.forEach(d=>{ const p={ id:d.id, ...d.data() }; if(String(p.playerUid)===String(playerUid)) a.push(p); }); a.sort((x,y)=>(y.ts||0)-(x.ts||0)); cb(a); },
     err=>cb(null, err));
 }
 export function addProgress(fitnessChannel, fromUid, title, note){
