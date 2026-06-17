@@ -115,3 +115,8 @@ test("reads still work: a player sees all measurements + the shared schedule", a
   await assertSucceeds(getDocs(collection(as(PLAYER),"measurements")));
   await assertSucceeds(getDoc(doc(as(PLAYER),"plans","__schedule")));
 });
+test("a user may write only their own pushSubs; nobody else reads them", async ()=>{
+  await assertSucceeds(setDoc(doc(as(PLAYER),"pushSubs",PLAYER), { memberId:PLAYER, subs:[] }));
+  await assertFails(setDoc(doc(as(PLAYER),"pushSubs",OUTSIDER), { memberId:OUTSIDER, subs:[] }));
+  await assertFails(getDoc(doc(as(PLAYER),"pushSubs",PLAYER)));   // clients never read
+});
