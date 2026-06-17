@@ -240,18 +240,15 @@ export async function getPlaybackUrl(source){
 export function getVapidPublicKey(){
   return fetch("/api/vapid-public").then(r=>r.json()).then(d=>d.key);
 }
-export async function savePushSub(uid, memberId, sub){
-  const ref = doc(db,"pushSubs",String(uid));
-  const cur = await getDoc(ref);
-  const subs = (cur.exists() && Array.isArray(cur.data().subs)) ? cur.data().subs : [];
-  const next = subs.filter(s=>s && s.endpoint!==sub.endpoint).concat([JSON.parse(JSON.stringify(sub))]);
-  return setDoc(ref, { memberId:String(memberId), subs:next }, { merge:true });
+// One subscription per user (their one device). We do NOT read first — the
+// pushSubs rule is read:false for privacy, so a read-modify-write would be
+// denied. Just overwrite; the server prunes dead endpoints on send.
+export function savePushSub(uid, memberId, sub){
+  return setDoc(doc(db,"pushSubs",String(uid)),
+    { memberId:String(memberId), subs:[ JSON.parse(JSON.stringify(sub)) ] }, { merge:true });
 }
-export async function removePushSub(uid, sub){
-  const ref = doc(db,"pushSubs",String(uid));
-  const cur = await getDoc(ref); if(!cur.exists()) return;
-  const subs = (Array.isArray(cur.data().subs)?cur.data().subs:[]).filter(s=>s && s.endpoint!==sub.endpoint);
-  return setDoc(ref, { subs }, { merge:true });
+export function removePushSub(uid){
+  return setDoc(doc(db,"pushSubs",String(uid)), { subs:[] }, { merge:true });
 }
 // Fire-and-forget notification trigger (never blocks the user action).
 export async function notify(kind, payload){

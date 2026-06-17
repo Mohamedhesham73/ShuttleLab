@@ -35,7 +35,7 @@ export async function disablePush(){
   try{
     const reg = await navigator.serviceWorker.getRegistration();
     const sub = reg && await reg.pushManager.getSubscription();
-    if(sub){ try{ await removePushSub(state.uid, sub.toJSON()); }catch(e){} await sub.unsubscribe(); }
+    if(sub){ try{ await removePushSub(state.uid); }catch(e){} await sub.unsubscribe(); }
   }catch(e){}
   return { ok:true };
 }
