@@ -11,9 +11,11 @@ function initVapid(){
 }
 const db = () => admin.firestore();
 
-async function memberByField(id){
-  const s = await db().collection("members").where("id","==",String(id)).limit(1).get();
-  return s.empty ? null : { uid:s.docs[0].id, ...s.docs[0].data() };
+// Coach check that mirrors the Firestore rules: claim/email OR member-doc role.
+async function callerIsCoach(me){
+  if(isCoach(me)) return true;
+  const d = await db().doc("members/"+me.uid).get();
+  return d.exists && d.data().role === "coach";
 }
 async function nameOfUid(uid){
   const d = await db().doc("members/"+uid).get();
@@ -78,7 +80,7 @@ export default async function handler(req, res){
         : { title:"ShuttleLab", body:"New fitness progress for "+(c.playerName||"a player"), url:"/?go=support", tag:"progress-"+req.body.channelId };
     }
     else if(kind === "assign"){
-      if(!isCoach(me)){ res.status(403).json({ error:"coach only" }); return; }
+      if(!(await callerIsCoach(me))){ res.status(403).json({ error:"coach only" }); return; }
       targets = await subsByAuthUids([req.body.staffId].filter(Boolean));
       const pname = await nameOfUid(req.body.playerId);
       payload = { title:"ShuttleLab", body:"You've been assigned to "+pname, url:"/?go=support", tag:"assign" };
@@ -90,14 +92,14 @@ export default async function handler(req, res){
       payload = { title:"ShuttleLab", body:"New message from "+name, url:"/", tag:"mind" };
     }
     else if(kind === "training" || kind === "plan"){
-      if(!isCoach(me)){ res.status(403).json({ error:"coach only" }); return; }
+      if(!(await callerIsCoach(me))){ res.status(403).json({ error:"coach only" }); return; }
       targets = await subsByMemberIds([req.body.playerId].filter(Boolean));
       payload = { title:"ShuttleLab",
         body: kind==="training" ? "New note from your coach" : "Your coach updated your season plan",
         url:"/?go=train", tag:kind };
     }
     else if(kind === "film"){
-      if(!isCoach(me)){ res.status(403).json({ error:"coach only" }); return; }
+      if(!(await callerIsCoach(me))){ res.status(403).json({ error:"coach only" }); return; }
       const v = await db().doc("videos/"+req.body.videoId).get();
       const a = v.exists ? v.data().assignedTo : null;
       let ids = [];
