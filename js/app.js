@@ -73,6 +73,8 @@ watchAuth(async (fbUser)=>{
     state.user = u; state.uid = fbUser.uid; state.role = u.role; state.name = u.name;
     state.targetId = String(u.id); state.targetName = u.name;
     if(fresh) state.view = u.role==="coach" ? "team" : (u.role==="player" ? "dash" : "support");
+    const go = new URLSearchParams(location.search).get("go");
+    if(go && VIEWS[go]){ state.view = go; history.replaceState({}, "", location.pathname); }
     renderApp();
   }else{
     clearUnsub();

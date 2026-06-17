@@ -1,6 +1,6 @@
 import { state, esc, fmtDate, toast, autoGrow } from "../core.js";
 import { TOURNAMENTS } from "../config.js";
-import { listenTraining, postTraining, listenPlan, getPlan, savePlan, listenSchedule, saveSchedule } from "../data.js";
+import { listenTraining, postTraining, listenPlan, getPlan, savePlan, listenSchedule, saveSchedule, notify } from "../data.js";
 
 // ---- date helpers ----
 function d(iso){ try{ return new Date(iso+"T00:00:00"); }catch(e){ return null; } }
@@ -147,6 +147,7 @@ export function renderTraining(){
     if(!txt || !curUid) return;
     try{
       await postTraining({ uid:String(curUid), text:txt, byName:state.name, dateISO:new Date().toISOString().slice(0,10), ts:Date.now() });
+      notify("training", { playerId: curUid });
       document.getElementById("msgText").value="";
     }catch(e){ errEl.textContent="Couldn't post: "+(e.message||e); }
   };
@@ -258,6 +259,7 @@ export function renderTraining(){
       try{
         const at=Date.now();
         await savePlan(curUid, { target:text, targetAt:at });
+        notify("plan", { playerId: curUid });
         plan.target=text; plan.targetAt=at; draftTarget="";   // saved → clear the box, show the card
         renderEdit();
         const m2=document.getElementById("tgtMsg"); if(m2){ m2.style.color="var(--brand)"; m2.textContent="Saved."; }

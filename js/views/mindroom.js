@@ -1,5 +1,5 @@
 import { state, esc, toast, autoGrow } from "../core.js";
-import { listenGiftJar, saveGiftJar, getPrivate, savePrivate, addMessage, listenMessages } from "../data.js";
+import { listenGiftJar, saveGiftJar, getPrivate, savePrivate, addMessage, listenMessages, notify } from "../data.js";
 
 // =============================================================
 //  MIND ROOM — a quiet, ever-changing place to land.
@@ -234,6 +234,7 @@ export function renderMindRoom(){
         ok.style.color="#fff"; ok.textContent="Sending…";
         try{
           await addMessage({ fromUid:state.uid, fromName:state.name, fromId:String(state.user.id), text:txt, ts:Date.now() });
+          notify("mind", {});
           ok.style.color="var(--brand)"; ok.textContent="Sent. "+esc(coachName.split(" ")[0])+" will see it. You're not alone. ♥";
           engine.celebrate();
           setTimeout(()=> wrap.remove(), 1800);
