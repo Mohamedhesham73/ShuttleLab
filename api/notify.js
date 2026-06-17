@@ -113,6 +113,15 @@ export default async function handler(req, res){
       const name = await nameOfUid(me.uid);
       payload = { title:"ShuttleLab", body:name+" challenged you on the ladder", url:"/?go=board", tag:"ladder" };
     }
+    else if(kind === "drill"){
+      if(!(await callerIsCoach(me))){ res.status(403).json({ error:"coach only" }); return; }
+      const a = req.body.assignedTo;
+      let ids = [];
+      if(a === "team"){ const s = await db().collection("members").where("role","==","player").get(); ids = s.docs.map(d=>d.data().id); }
+      else if(Array.isArray(a)) ids = a;
+      targets = await subsByMemberIds(ids);
+      payload = { title:"ShuttleLab", body:"New drill from your coach", url:"/?go=library", tag:"drill" };
+    }
     else { res.status(400).json({ error:"unknown kind" }); return; }
 
     await sendTo(targets, payload);

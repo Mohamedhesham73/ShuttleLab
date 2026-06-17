@@ -199,7 +199,7 @@ export function mountProCourt(container, opts){
       <select id="${uid}shot" style="flex:1;min-width:130px;">${SHOT_ORDER.map(k=>`<option value="${k}">${SHOTS[k].name}</option>`).join("")}</select>
       <span class="chip" id="${uid}ss">Set start</span>
       <span class="chip" id="${uid}mv">Move</span>
-      ${(cat!=="singles"&&feed!=="multi") ? `<span class="chip on" id="${uid}rot">Auto rotate</span>` : ``}
+      ${feed!=="multi" ? `<span class="chip" id="${uid}rot" title="Players auto-recover/rotate after a hit. Off = you place everyone with Move.">Auto-move</span>` : ``}
       ${feed==="multi" ? `<span class="chip" id="${uid}fd">Place feeder</span><select id="${uid}rate" style="width:auto;font-size:12px;"><option value="fast">Rapid feed</option><option value="normal">Steady feed</option><option value="slow">Relaxed feed</option></select>` : ``}
       <button class="btn" id="${uid}rec" style="padding:7px 11px;font-size:12px;">Recover</button>
       <button class="btn" id="${uid}undo" style="padding:7px 11px;font-size:12px;">Undo</button>
@@ -259,7 +259,7 @@ export function mountProCourt(container, opts){
   let beats = [], beatI = 0, beatOn = true, audioCtx = null;   // on-court metronome
   let mvSel = null, mvOn = false, fdOn = false;   // Move tool / Place-feeder tool
   let ssSel = null, ssOn = false;                 // Set-start tool (positions, not steps)
-  let autoRot = true;                             // doubles 2v2 formation rotation
+  let autoRot = false;                            // "Auto-move" — OFF by default; gates 1v1 recovery + 2v2 rotation (coach choreographs with Move)
 
   // ---------- static rendering ----------
   function polyPts(arr){ return arr.filter(Boolean).map(p=>p[0].toFixed(1)+","+p[1].toFixed(1)).join(" "); }
@@ -402,7 +402,7 @@ export function mountProCourt(container, opts){
     const movers=[], flights=[], poses=[], fx=[], segs=[];
     const P={}; players.forEach(pl=>P[pl.p]={x:pl.base.x,y:pl.base.y});
     const avail={}; players.forEach(pl=>avail[pl.p]=0);
-    const oneVone = cat==="singles" && feed!=="multi" && meta.nA===1 && meta.nB===1;
+    const oneVone = cat==="singles" && feed!=="multi" && meta.nA===1 && meta.nB===1 && autoRot;
     const twoTwo  = cat!=="singles" && feed!=="multi" && meta.nA===2 && meta.nB===2 && autoRot;
     const nextHit=(i)=>{ for(let k=i+1;k<steps.length;k++){ if(!steps[k].rec) return steps[k]; } return null; };
     let prevFlight=null, tEnd=0, lastContact=0;
@@ -1019,7 +1019,7 @@ export function mountProCourt(container, opts){
     const rate=gid("rate");
     if(rate){ rate.value=meta.rate; rate.onchange=()=>{ meta.rate=rate.value; afterStepsChange(); hint("Feed rhythm: "+rate.options[rate.selectedIndex].text+"."); }; }
     const rot=gid("rot");
-    if(rot) rot.onclick=function(){ autoRot=!autoRot; this.classList.toggle("on",autoRot); afterStepsChange(); hint(autoRot?"Auto rotation ON — pairs flow front-and-back / side-by-side like a real match.":"Auto rotation OFF — you choreograph every movement with Move."); };
+    if(rot) rot.onclick=function(){ autoRot=!autoRot; this.classList.toggle("on",autoRot); afterStepsChange(); hint(autoRot?"Auto-move ON — players auto-recover / rotate after each hit.":"Auto-move OFF — players stay put; choreograph everything with the Move tool."); };
     gid("rec").onclick=()=>{
       let p="A1";
       for(let i=steps.length-1;i>=0;i--){ if(!steps[i].rec){ p = steps[i].hitter || (feed==="multi" ? "A1" : (steps[i].from.y<CT.NET?"A1":"B1")); break; } }

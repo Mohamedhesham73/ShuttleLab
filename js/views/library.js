@@ -1,11 +1,14 @@
 import { state, esc } from "../core.js";
-import { listenDrills, addDrill, updateDrill, deleteDrill, getPrivate, savePrivate } from "../data.js";
+import { listenDrills, addDrill, updateDrill, deleteDrill, getPrivate, savePrivate, notify } from "../data.js";
 import { mountSideCourt } from "../sidecourt.js";
 import { mountSoloCourt } from "../solocourt.js";
 import { mountCourtLab } from "../courtlab.js";
 import { mountProCourt } from "../court3d.js";
 
 const CATS = ["Shots","Footwork","Strength","Conditioning","Tactics"];
+
+// Notify the assigned players when a drill/session is sent (team or a list).
+const notifyDrill = a => { if(a === "team" || (Array.isArray(a) && a.length)) notify("drill", { assignedTo: a }); };
 
 // Classic courts (locked mockup engines) — still open old saved drills.
 const COURTS = [
@@ -136,7 +139,7 @@ export function renderLibrary(){
       if(!chosen.length){ msg.style.color="var(--down)"; msg.textContent="Add at least one drill."; return; }
       const payload={ type:"session", category:"Session", title, drillIds:chosen, assignedTo:assign.value(), ts:Date.now() };
       msg.style.color="var(--muted)"; msg.textContent="Saving…";
-      try{ if(sess&&sess.docId) await updateDrill(sess.docId,payload); else await addDrill(payload); leaveCourt(); }
+      try{ if(sess&&sess.docId) await updateDrill(sess.docId,payload); else await addDrill(payload); notifyDrill(payload.assignedTo); leaveCourt(); }
       catch(e){ msg.style.color="var(--down)"; msg.textContent="Couldn't save: "+(e.message||e); }
     };
   };
@@ -320,6 +323,7 @@ export function renderLibrary(){
       try{
         if(drill && drill.docId) await updateDrill(drill.docId, payload);
         else await addDrill(payload);
+        notifyDrill(payload.assignedTo);
         leaveCourt();
       }catch(e){ msg.style.color="var(--down)"; msg.textContent="Couldn't save: "+(e.message||e); }
     };
@@ -411,14 +415,16 @@ export function renderLibrary(){
         const errEl = document.getElementById("dErr"); errEl.textContent = "";
         if(!title){ errEl.textContent = "Give it a title."; return; }
         try{
+          const at = textAssign.value();
           await addDrill({
             title,
             category: document.getElementById("dCat").value,
             desc: document.getElementById("dDesc").value.trim(),
             videoUrl: document.getElementById("dVideo").value.trim(),
-            assignedTo: textAssign.value(),
+            assignedTo: at,
             ts: Date.now()
           });
+          notifyDrill(at);
           form.style.display = "none";
         }catch(e){ errEl.textContent = "Couldn't save: " + (e.message||e); }
       };
