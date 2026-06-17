@@ -9,6 +9,8 @@ export function logout(){
   signOutUser().catch(()=>{});
 }
 
+const roleLabel = r => ({ coach:"Coach", player:"Player", mental_coach:"Mental coach", fitness_trainer:"Fitness trainer" })[r] || r;
+
 export function header(){
   const staff = state.role==="mental_coach" || state.role==="fitness_trainer";
   const tabs = staff
@@ -19,7 +21,7 @@ export function header(){
   return `<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
     <div class="brand"><span class="logo-txt" style="font-size:22px;">Shuttle<b>Lab</b></span></div>
     <div style="display:flex;align-items:center;gap:10px;">
-      <span class="pill">${avatar(state.name, state.user.photo, 26)}<span class="disp">${state.name}</span><span class="disp muted" style="font-size:11px;">· ${state.role}</span></span>
+      <span class="pill">${avatar(state.name, state.user.photo, 26)}<span class="disp">${state.name}</span><span class="disp muted" style="font-size:11px;">· ${roleLabel(state.role)}</span></span>
       <button class="btn" id="pushToggle" title="Notifications" style="padding:7px 10px;font-size:13px;">🔔</button>
       <button class="btn" style="padding:7px 12px;font-size:12px;" id="logout">Sign out</button>
     </div>

@@ -27,7 +27,7 @@ function mountChat(el, channel){
     if(err){ list.innerHTML=`<div class="err">${esc(err.message)}</div>`; return; }
     list.innerHTML = (msgs||[]).map(m=>{
       const mine = String(m.fromUid)===String(state.uid);
-      return `<div style="align-self:${mine?"flex-end":"flex-start"};max-width:80%;background:${mine?"var(--brand)":"var(--line)"};color:${mine?"#0b1410":"inherit"};padding:7px 11px;border-radius:12px;font-size:14px;white-space:pre-wrap;">${esc(m.text)}</div>`;
+      return `<div style="align-self:${mine?"flex-end":"flex-start"};max-width:82%;background:${mine?"var(--brand)":"rgba(255,255,255,.09)"};border:1px solid ${mine?"transparent":"var(--line)"};color:${mine?"#0b1410":"var(--text)"};padding:8px 12px;border-radius:14px;font-size:14px;line-height:1.4;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;">${esc(m.text)}</div>`;
     }).join("") || `<div class="muted" style="font-size:12px;">No messages yet.</div>`;
     list.scrollTop = list.scrollHeight;
   });
@@ -137,7 +137,7 @@ async function renderCoachSupport(){
     (chans||[]).forEach(c=>{ (byPlayer[c.playerName||c.playerUid] ||= []).push(c); });
     box.innerHTML = `<div class="disp" style="font-size:15px;margin:18px 0 10px;">All conversations</div>` +
       Object.keys(byPlayer).map(name=>`<div style="margin-bottom:10px;"><div class="muted" style="font-size:12px;margin-bottom:5px;">${esc(name)}</div>${
-        byPlayer[name].map(c=>`<span class="chip" data-open="${esc(c.id)}" style="margin:0 6px 6px 0;">${esc(TYPE_LABEL[c.type]||c.type)}</span>`).join("")
+        byPlayer[name].map(c=>`<span data-open="${esc(c.id)}" style="display:inline-block;margin:0 6px 6px 0;padding:6px 11px;border:1px solid var(--line);border-radius:9px;font-size:12px;cursor:pointer;color:var(--text);">${esc(TYPE_LABEL[c.type]||c.type)}</span>`).join("")
       }</div>`).join("") + `<div id="coachChatMount"></div>`;
     box.querySelectorAll("[data-open]").forEach(ch=>ch.onclick=()=>{
       const c=(chans||[]).find(x=>x.id===ch.dataset.open); if(!c) return;
