@@ -10,6 +10,7 @@ const TYPE_LABEL = {
   coach_fitness: "Coach ↔ trainer",
   fitness_player:"Fitness trainer"
 };
+const TYPE_ORDER = { coach_mental:0, mental_player:1, coach_fitness:2, fitness_player:3 };
 
 // Render a live chat for one channel into `el`. Returns an unsubscribe fn.
 function mountChat(el, channel){
@@ -136,9 +137,15 @@ async function renderCoachSupport(){
     const byPlayer={};
     (chans||[]).forEach(c=>{ (byPlayer[c.playerName||c.playerUid] ||= []).push(c); });
     box.innerHTML = `<div class="disp" style="font-size:15px;margin:18px 0 10px;">All conversations</div>` +
-      Object.keys(byPlayer).map(name=>`<div style="margin-bottom:10px;"><div class="muted" style="font-size:12px;margin-bottom:5px;">${esc(name)}</div>${
-        byPlayer[name].map(c=>`<span data-open="${esc(c.id)}" style="display:inline-block;margin:0 6px 6px 0;padding:6px 11px;border:1px solid var(--line);border-radius:9px;font-size:12px;cursor:pointer;color:var(--text);">${esc(TYPE_LABEL[c.type]||c.type)}</span>`).join("")
-      }</div>`).join("") + `<div id="coachChatMount"></div>`;
+      Object.keys(byPlayer).map(name=>{
+        const list = byPlayer[name].slice().sort((a,b)=>(TYPE_ORDER[a.type]??9)-(TYPE_ORDER[b.type]??9));
+        return `<div style="margin-bottom:14px;">
+          <div class="muted" style="font-size:12px;margin-bottom:6px;">${esc(name)}</div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            ${list.map(c=>`<div data-open="${esc(c.id)}" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;cursor:pointer;font-size:13px;"><span>${esc(TYPE_LABEL[c.type]||c.type)}</span><span class="muted">›</span></div>`).join("")}
+          </div>
+        </div>`;
+      }).join("") + `<div id="coachChatMount"></div>`;
     box.querySelectorAll("[data-open]").forEach(ch=>ch.onclick=()=>{
       const c=(chans||[]).find(x=>x.id===ch.dataset.open); if(!c) return;
       if(chatUnsub){ chatUnsub(); chatUnsub=null; }
