@@ -88,3 +88,30 @@ test("only the fitness trainer logs progress; the player cannot", async ()=>{
   await assertSucceeds(addDoc(collection(as(FIT),"progress"),
     { channelId:fpId, playerUid:PLAYER, staffUid:FIT, coachUid:COACH, title:"week 1", note:"good", ts:2, readers:[COACH,FIT,PLAYER] }));
 });
+
+// ---- player-data isolation (a player can only change their OWN data) ----
+test("a player may write only their OWN measurements / goals / plan", async ()=>{
+  await assertSucceeds(addDoc(collection(as(PLAYER),"measurements"), { uid:PLAYER, results:{} }));
+  await assertFails(addDoc(collection(as(PLAYER),"measurements"), { uid:OUTSIDER, results:{} }));
+  await assertSucceeds(setDoc(doc(as(PLAYER),"goals",PLAYER), { beep:11 }));
+  await assertFails(setDoc(doc(as(PLAYER),"goals",OUTSIDER), { beep:11 }));
+  await assertSucceeds(setDoc(doc(as(PLAYER),"plans",PLAYER), { target:"mine" }, { merge:true }));
+  await assertFails(setDoc(doc(as(PLAYER),"plans",OUTSIDER), { target:"hack" }, { merge:true }));
+});
+test("a player cannot edit another's measurement, nor the coach-only shared docs", async ()=>{
+  await assertFails(setDoc(doc(as(PLAYER),"plans","__giftjar"), { list:[] }, { merge:true }));
+  await assertFails(setDoc(doc(as(PLAYER),"plans","__schedule"), { list:[] }, { merge:true }));
+  await assertSucceeds(setDoc(doc(as(PLAYER),"plans","__ladder"), { order:[PLAYER] }, { merge:true }));
+});
+test("training notes are coach-only to write", async ()=>{
+  await assertFails(addDoc(collection(as(PLAYER),"training"), { uid:PLAYER, text:"forge" }));
+  await assertSucceeds(addDoc(collection(as(COACH),"training"), { uid:PLAYER, text:"good job" }));
+});
+test("the coach may still write anyone's data", async ()=>{
+  await assertSucceeds(addDoc(collection(as(COACH),"measurements"), { uid:OUTSIDER, results:{} }));
+  await assertSucceeds(setDoc(doc(as(COACH),"plans",OUTSIDER), { target:"set by coach" }, { merge:true }));
+});
+test("reads still work: a player sees all measurements + the shared schedule", async ()=>{
+  await assertSucceeds(getDocs(collection(as(PLAYER),"measurements")));
+  await assertSucceeds(getDoc(doc(as(PLAYER),"plans","__schedule")));
+});

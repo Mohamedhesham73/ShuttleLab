@@ -15,6 +15,9 @@ service cloud.firestore {
     function isStaff() { return myRole() == 'mental_coach' || myRole() == 'fitness_trainer'; }
     function notStaff() { return signedIn() && !isStaff(); }
     function myAssigned() { return get(/databases/$(database)/documents/members/$(request.auth.uid)).data.get('assigned', []); }
+    // The caller's player id (the `id` field the app uses as the data key for
+    // measurements/goals/plans — NOT the Auth UID). '' if they have no member doc.
+    function myId() { return meExists() ? get(/databases/$(database)/documents/members/$(request.auth.uid)).data.get('id', '') : ''; }
     function chan(id) { return get(/databases/$(database)/documents/channels/$(id)).data; }
 
     // Members: coach writes. Coach + players read all (dashboards/leaderboard).
@@ -26,15 +29,36 @@ service cloud.firestore {
       allow write: if isCoach();
     }
 
-    // Everything below is fenced off from support staff.
-    match /measurements/{id} { allow read, write: if notStaff(); }
-    match /goals/{id}        { allow read, write: if notStaff(); }
-    match /drills/{id}       { allow read, write: if notStaff(); }
-    match /training/{id}     { allow read, write: if notStaff(); }
+    // Everything below is fenced off from support staff. READS stay open to all
+    // non-staff (the leaderboard / squad / dashboards need them); WRITES are
+    // locked so a player can only change their OWN data, never another player's.
 
+    // Test results: anyone (non-staff) reads (leaderboard). A player may only add
+    // their own session; the coach may add anyone's. Edits/deletes are coach-only.
+    match /measurements/{id} {
+      allow read:   if notStaff();
+      allow create: if isCoach() || (myRole() == 'player' && request.resource.data.uid == myId());
+      allow update, delete: if isCoach();
+    }
+    // Per-player target doc (id = player id): own or coach.
+    match /goals/{id} {
+      allow read:   if notStaff();
+      allow write:  if isCoach() || (myRole() == 'player' && id == myId());
+    }
+    // Shared team drill / session library — coach-managed, everyone reads.
+    match /drills/{id}       { allow read, write: if notStaff(); }
+    // Coaching notes pushed to a player — coach writes; everyone (non-staff) reads
+    // (each player's view queries only their own uid).
+    match /training/{id} {
+      allow read:   if notStaff();
+      allow create, update, delete: if isCoach();
+    }
+
+    // Season plans: per-player doc (own or coach), plus the shared __schedule /
+    // __giftjar (coach-only) and __ladder (players write it via challenges).
     match /plans/{id} {
       allow read:  if notStaff();
-      allow write: if isCoach() || (notStaff() && id != '__schedule' && id != '__giftjar');
+      allow write: if isCoach() || (myRole() == 'player' && (id == myId() || id == '__ladder'));
     }
 
     match /private/{uid} {
