@@ -235,3 +235,33 @@ export async function getPlaybackUrl(source){
   }
   return null;
 }
+
+// ---- Web Push ----
+export function getVapidPublicKey(){
+  return fetch("/api/vapid-public").then(r=>r.json()).then(d=>d.key);
+}
+export async function savePushSub(uid, memberId, sub){
+  const ref = doc(db,"pushSubs",String(uid));
+  const cur = await getDoc(ref);
+  const subs = (cur.exists() && Array.isArray(cur.data().subs)) ? cur.data().subs : [];
+  const next = subs.filter(s=>s && s.endpoint!==sub.endpoint).concat([JSON.parse(JSON.stringify(sub))]);
+  return setDoc(ref, { memberId:String(memberId), subs:next }, { merge:true });
+}
+export async function removePushSub(uid, sub){
+  const ref = doc(db,"pushSubs",String(uid));
+  const cur = await getDoc(ref); if(!cur.exists()) return;
+  const subs = (Array.isArray(cur.data().subs)?cur.data().subs:[]).filter(s=>s && s.endpoint!==sub.endpoint);
+  return setDoc(ref, { subs }, { merge:true });
+}
+// Fire-and-forget notification trigger (never blocks the user action).
+export async function notify(kind, payload){
+  try{
+    const user = auth.currentUser; if(!user) return;
+    const token = await user.getIdToken();
+    await fetch("/api/notify", {
+      method:"POST",
+      headers:{ "Content-Type":"application/json", Authorization:"Bearer "+token },
+      body: JSON.stringify({ kind, ...(payload||{}) })
+    });
+  }catch(e){ /* best-effort */ }
+}
