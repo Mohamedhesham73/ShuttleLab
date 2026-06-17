@@ -1,6 +1,6 @@
 import { state, esc, bestAvg, navigate } from "../core.js";
 import { TESTS } from "../config.js";
-import { saveMeasurement } from "../data.js";
+import { saveMeasurement, notify } from "../data.js";
 
 export function renderLog(){
   const view = document.getElementById("view");
@@ -93,6 +93,7 @@ export function renderLog(){
     document.getElementById("saveBtn").textContent = "Saving…";
     try{
       await saveMeasurement({ uid:String(playerId), name:playerName, dateISO, ts:Date.now(), results });
+      if(state.role==="coach") notify("test", { playerId:String(playerId) });
       navigate("dash", { targetId:String(playerId), targetName:playerName });
     }catch(e){
       document.getElementById("saveBtn").textContent = "Save session";

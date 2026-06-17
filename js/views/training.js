@@ -277,7 +277,7 @@ export function renderTraining(){
       if(!title){ errEl.textContent=" Give it a focus."; return; }
       captureDraft();
       plan.blocks = (plan.blocks||[]).concat([{ id:Date.now(), start, end, title, details }]);
-      try{ await savePlan(curUid, { blocks: plan.blocks }); renderEdit(); }
+      try{ await savePlan(curUid, { blocks: plan.blocks }); notify("plan", { playerId: curUid }); renderEdit(); }
       catch(e){ errEl.textContent=" Couldn't save: "+(e.message||e); }
     };
 
@@ -285,7 +285,7 @@ export function renderTraining(){
       btn.onclick = async ()=>{
         captureDraft();
         plan.blocks = (plan.blocks||[]).filter(b=>String(b.id)!==String(btn.dataset.del));
-        try{ await savePlan(curUid, { blocks: plan.blocks }); renderEdit(); }catch(e){ toast("Couldn't save — check your connection.","err"); }
+        try{ await savePlan(curUid, { blocks: plan.blocks }); notify("plan", { playerId: curUid }); renderEdit(); }catch(e){ toast("Couldn't save — check your connection.","err"); }
       };
     });
 
@@ -295,7 +295,7 @@ export function renderTraining(){
         const id=row.dataset.tg, set=new Set(plan.tournaments||[]);
         if(set.has(id)) set.delete(id); else set.add(id);
         plan.tournaments = Array.from(set);
-        try{ await savePlan(curUid, { tournaments: plan.tournaments }); renderEdit(); }catch(e){ toast("Couldn't save — check your connection.","err"); }
+        try{ await savePlan(curUid, { tournaments: plan.tournaments }); notify("plan", { playerId: curUid }); renderEdit(); }catch(e){ toast("Couldn't save — check your connection.","err"); }
       };
     });
 

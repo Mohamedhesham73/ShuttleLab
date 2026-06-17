@@ -91,12 +91,17 @@ export default async function handler(req, res){
       const name = await nameOfUid(me.uid);
       payload = { title:"ShuttleLab", body:"New message from "+name, url:"/", tag:"mind" };
     }
-    else if(kind === "training" || kind === "plan"){
+    else if(kind === "training" || kind === "plan" || kind === "test" || kind === "goal"){
       if(!(await callerIsCoach(me))){ res.status(403).json({ error:"coach only" }); return; }
       targets = await subsByMemberIds([req.body.playerId].filter(Boolean));
-      payload = { title:"ShuttleLab",
-        body: kind==="training" ? "New note from your coach" : "Your coach updated your season plan",
-        url:"/?go=train", tag:kind };
+      const BODIES = {
+        training: "New note from your coach",
+        plan: "Your coach updated your season plan",
+        test: "Your coach logged your new test results",
+        goal: "Your coach set a new target for you"
+      };
+      payload = { title:"ShuttleLab", body: BODIES[kind],
+        url: (kind==="test"||kind==="goal") ? "/?go=dash" : "/?go=train", tag:kind };
     }
     else if(kind === "film"){
       if(!(await callerIsCoach(me))){ res.status(403).json({ error:"coach only" }); return; }

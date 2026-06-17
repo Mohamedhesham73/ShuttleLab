@@ -1,6 +1,6 @@
 import { state, esc, r1, fmtDate, testById, avatar, navigate } from "../core.js";
 import { TESTS } from "../config.js";
-import { listenMeasurements, listenGoals, setGoal } from "../data.js";
+import { listenMeasurements, listenGoals, setGoal, notify } from "../data.js";
 import { openReport } from "../report.js";
 import { cardFromSessions, tierColor, ratingColor } from "../rating.js";
 
@@ -153,7 +153,7 @@ export function renderDashboard(){
       document.getElementById("goalSet").onclick = ()=>{
         const tid = document.getElementById("goalTest").value;
         const val = parseFloat(document.getElementById("goalVal").value);
-        if(!isNaN(val)) setGoal(state.targetId, tid, val);
+        if(!isNaN(val)){ setGoal(state.targetId, tid, val); notify("goal", { playerId:String(state.targetId) }); }
       };
     }
 
