@@ -1,5 +1,5 @@
 import { state, esc, navigate } from "../core.js";
-import { listenVideos, addVideo, updateVideo, deleteVideo, markVideoWatched, getPlaybackUrl, deleteR2, listenDrills } from "../data.js";
+import { listenVideos, addVideo, updateVideo, deleteVideo, markVideoWatched, getPlaybackUrl, deleteR2, listenDrills, notify } from "../data.js";
 import { uploadToR2 } from "../r2upload.js";
 
 // =============================================================
@@ -553,6 +553,7 @@ export function renderMatches(){
         const msg=document.getElementById("flmSaveMsg"); msg.textContent="Saving…"; msg.style.color="var(--muted)";
         try{
           await updateVideo(work.docId, { title:work.title, type:work.type, markers, assignedTo });
+          if(assignedTo && assignedTo !== "") notify("film", { videoId: work.docId });
           work.assignedTo=assignedTo;
           msg.style.color="var(--brand)";
           msg.textContent = assignedTo==="team" ? "Saved & shared with the team." :

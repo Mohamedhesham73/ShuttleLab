@@ -1,6 +1,6 @@
 import { state, esc, avatar, fmtDate } from "../core.js";
 import { TESTS } from "../config.js";
-import { listenAllMeasurements } from "../data.js";
+import { listenAllMeasurements, notify } from "../data.js";
 import { cardFromSessions, overallOfSession } from "../rating.js";
 import { listenLadder, saveLadder } from "../data.js";
 
@@ -143,7 +143,7 @@ export function renderLeaderboard(){
       if(String(winnerId)===String(c)){ const ci=next.indexOf(String(c)), di=next.indexOf(String(d)); if(ci>=0&&di>=0){ next[ci]=String(d); next[di]=String(c); } }
       saveLadder({ order:next, pending:null }).catch(()=>{});
     };
-    const challenge = (defenderId)=> saveLadder({ order, pending:{ challengerId:meId, defenderId:String(defenderId), ts:Date.now() } }).catch(()=>{});
+    const challenge = (defenderId)=>{ saveLadder({ order, pending:{ challengerId:meId, defenderId:String(defenderId), ts:Date.now() } }).catch(()=>{}); notify("ladder", { opponentId:String(defenderId) }); };
 
     const rows = order.map((id,i)=>{
       const me = String(id)===meId;

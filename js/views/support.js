@@ -1,7 +1,7 @@
 import { state, esc, autoGrow } from "../core.js";
 import {
   loadMembers, setStaffMember, provisionChannels,
-  listenMyChannels, listenChat, sendChat, listenProgress, addProgress
+  listenMyChannels, listenChat, sendChat, listenProgress, addProgress, notify
 } from "../data.js";
 
 const TYPE_LABEL = {
@@ -31,7 +31,7 @@ function mountChat(el, channel){
     }).join("") || `<div class="muted" style="font-size:12px;">No messages yet.</div>`;
     list.scrollTop = list.scrollHeight;
   });
-  const send = async ()=>{ const t=input.value.trim(); if(!t) return; input.value=""; autoGrow(input); try{ await sendChat(channel, state.uid, t); }catch(e){ alert("Couldn't send: "+(e.message||e)); } };
+  const send = async ()=>{ const t=input.value.trim(); if(!t) return; input.value=""; autoGrow(input); try{ await sendChat(channel, state.uid, t); notify("chat", { channelId: channel.id }); }catch(e){ alert("Couldn't send: "+(e.message||e)); } };
   el.querySelector("#chatSend").onclick = send;
   return unsub;
 }
@@ -125,6 +125,7 @@ async function renderCoachSupport(){
     try{
       await setStaffMember(sUid, { assigned:s.assigned });
       if(on) await provisionChannels(state.uid, { uid:p.uid, name:p.name }, { uid:s.uid, name:s.name, role:s.role });
+      if(on) notify("assign", { playerId: p.uid, staffId: s.uid });
     }catch(e){ chip.classList.toggle("on",!on); alert("Couldn't save: "+(e.message||e)); }
   });
 
@@ -164,7 +165,7 @@ function mountProgress(el, playerUid, fitnessChannel){
     el.querySelector("#progAdd").onclick = async ()=>{
       const t=el.querySelector("#progTitle").value.trim(), n=el.querySelector("#progNote").value.trim();
       if(!t && !n) return;
-      try{ await addProgress(fitnessChannel, state.uid, t, n); el.querySelector("#progTitle").value=""; el.querySelector("#progNote").value=""; autoGrow(el.querySelector("#progNote")); }
+      try{ await addProgress(fitnessChannel, state.uid, t, n); notify("progress", { channelId: fitnessChannel.id }); el.querySelector("#progTitle").value=""; el.querySelector("#progNote").value=""; autoGrow(el.querySelector("#progNote")); }
       catch(e){ alert("Couldn't save: "+(e.message||e)); }
     };
   }
