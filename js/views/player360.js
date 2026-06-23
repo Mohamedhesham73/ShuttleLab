@@ -55,6 +55,51 @@ function buildHeader(u, name, sessions){
     </div>`;
 }
 
+function buildChips(id, sessions, training, ladder, drills, videos){
+  const cardData = cardFromSessions(sessions || []);
+  const since = Date.now() - 30*864e5;
+  const t30 = trainingCountSince(training, since);
+  const rank = ladderRank(ladder, id);
+  const dCount = assignedToPlayer(drills, id).length;
+  const vCount = assignedToPlayer(videos, id).length;
+  const chip = (label, val) => `<div style="flex:1;min-width:96px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;">
+    <div class="muted" style="font-size:11px;">${label}</div>
+    <div class="num" style="font-size:20px;font-weight:700;margin-top:2px;">${val}</div></div>`;
+  return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;">
+    ${chip("Overall", cardData.overall==null?"—":cardData.overall)}
+    ${chip("Train · 30d", t30)}
+    ${chip("Ladder", rank==null?"—":"#"+rank)}
+    ${chip("Drills", dCount)}
+    ${chip("Films", vCount)}
+  </div>`;
+}
+
+function buildTests(sessions){
+  if(!sessions || !sessions.length){
+    return card("Tests", `<div class="muted" style="font-size:13px;">No test sessions yet.</div>`, "dash", "Full dashboard ›");
+  }
+  const latest = sessions[sessions.length-1];
+  const prev = sessions.length > 1 ? sessions[sessions.length-2] : null;
+  const improved = [], declined = [];
+  if(prev) TESTS.forEach(t => {
+    const a = latest.results?.[t.id]?.best, b = prev.results?.[t.id]?.best;
+    if(a==null || b==null || a===b) return;
+    const better = t.higher ? a>b : a<b;
+    const pct = b ? Math.abs((a-b)/b*100) : 0;
+    (better ? improved : declined).push({ name:t.name, pct:Math.round(pct*10)/10 });
+  });
+  improved.sort((x,y) => y.pct-x.pct);
+  declined.sort((x,y) => y.pct-x.pct);
+  const top = (arr, col, sign, empty) => arr.length
+    ? `<div style="display:flex;justify-content:space-between;font-size:14px;padding:2px 0;"><span>${esc(arr[0].name)}</span><span class="num" style="color:${col};">${sign}${arr[0].pct}%</span></div>`
+    : `<span class="muted" style="font-size:13px;">${empty}</span>`;
+  const body = prev
+    ? `<div class="disp" style="color:var(--up);font-size:13px;margin-bottom:4px;">▲ Better</div>${top(improved,"var(--up)","+","—")}
+       <div class="disp" style="color:var(--down);font-size:13px;margin:10px 0 4px;">◆ Focus</div>${top(declined,"var(--down)","","Nothing dropped 🎯")}`
+    : `<span class="muted" style="font-size:13px;">First test logged — baseline only.</span>`;
+  return card("Tests & athlete", body, "dash", "Full dashboard ›");
+}
+
 export function renderPlayer360(){
   const view = document.getElementById("view");
   // coach-only: anyone else falls back to their own dashboard
@@ -72,7 +117,10 @@ export function renderPlayer360(){
       ladder = null, channels = [], chats = [], progress = [];
 
   const draw = () => {
-    view.innerHTML = buildHeader(u, name, sessions);
+    view.innerHTML =
+      buildHeader(u, name, sessions) +
+      buildChips(id, sessions, training, ladder, drills, videos) +
+      buildTests(sessions);
     wire();
   };
 
@@ -90,4 +138,8 @@ export function renderPlayer360(){
   state.unsub.push(listenMeasurements(id, (arr, err) => {
     if(!err){ sessions = (arr || []).slice().sort((a,b) => (a.dateISO||"").localeCompare(b.dateISO||"")); draw(); }
   }));
+  state.unsub.push(listenTraining(id, (arr, err) => { if(!err){ training = arr || []; draw(); } }));
+  state.unsub.push(listenDrills((arr, err) => { if(!err){ drills = arr || []; draw(); } }));
+  state.unsub.push(listenVideos((arr, err) => { if(!err){ videos = arr || []; draw(); } }));
+  state.unsub.push(listenLadder((d, err) => { if(!err){ ladder = d || null; draw(); } }));
 }
