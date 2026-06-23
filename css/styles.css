@@ -148,6 +148,9 @@ label{font-family:'Saira Condensed',sans-serif;text-transform:uppercase;letter-s
 .chip{font-family:'Saira Condensed',sans-serif;text-transform:uppercase;letter-spacing:.05em;font-size:12px;padding:6px 13px;border-radius:999px;border:1px solid var(--line);cursor:pointer;color:var(--muted);transition:.18s;}
 .chip:hover{color:var(--text);border-color:rgba(164,221,43,.35);}
 .chip.on{background:linear-gradient(180deg,var(--brand2),var(--brand));color:var(--brandink);border-color:transparent;font-weight:700;box-shadow:0 6px 16px -8px var(--glow);}
+/* Court Lab "Expand" — only useful on touch (phones/tablets); a mouse-driven
+   laptop/desktop already shows the court full-size and the toggle glitches there */
+@media (hover:hover) and (pointer:fine){ .exp-chip{display:none !important;} }
 
 /* ---- progress bars ---- */
 .bar{height:9px;background:rgba(0,0,0,.5);border-radius:999px;overflow:hidden;border:1px solid var(--line2);}

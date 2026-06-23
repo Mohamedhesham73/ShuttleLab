@@ -181,7 +181,7 @@ export function mountProCourt(container, opts){
   container.innerHTML = `
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
       ${Object.keys(CAMS).map(k=>`<span class="chip ${k==="broadcast"?"on":""}" id="${uid}cam_${k}">🎥 ${CAMS[k].name}</span>`).join("")}
-      ${editing?`<span class="chip" id="${uid}exp" title="Enlarge the court to draw on a phone">⤢ Expand</span>`:""}
+      ${editing?`<span class="chip exp-chip" id="${uid}exp" title="Enlarge the court to draw on a phone">⤢ Expand</span>`:""}
       <span class="muted" style="font-size:12px;margin-left:auto;">${cat==="mixed"?"Mixed doubles":cat==="doubles"?"Doubles":"Singles"} · ${feed==="multi"?"Multi-shuttle":"Drill"}</span>
     </div>
     <div style="display:flex;justify-content:center;background:linear-gradient(#0a1822,#0c1410);border:1px solid var(--line);border-radius:14px;overflow:hidden;">
