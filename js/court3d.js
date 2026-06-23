@@ -329,7 +329,7 @@ export function mountProCourt(container, opts){
     if(basis.bird){
       return { far: st.y>CT.NET, svg:`<circle cx="${anchor[0]}" cy="${anchor[1]}" r="7.5" fill="${pl.jersey}" stroke="#0c1410" stroke-width="1.3"/><text x="${anchor[0]}" y="${anchor[1]+3.1}" font-size="8" text-anchor="middle" fill="#0c1410" font-weight="700">${pl.lbl||pl.p}</text>` };
     }
-    const FIG = 0.8*(pl.fig||1);
+    const FIG = 1.1*(pl.fig||1);
     const s = cam.F/anchor[2];
     const J = poseJoints(st.pose, st.blend==null?1:st.blend, st.poseFrom);
     const P = (j)=>{ const lx=J[j][0]*st.face*FIG, lz=(J[j][1]+(st.zoff||0))*FIG;
@@ -337,6 +337,10 @@ export function mountProCourt(container, opts){
     const pts={}; let ok=true;
     JOINTS.forEach(j=>{ pts[j]=P(j); if(!pts[j]) ok=false; });
     if(!ok) return { svg:"", far: st.y>CT.NET };
+    // at the moment of contact, drive the racket head onto the actual shuttle
+    // contact point so the player strikes the shuttle, not the air
+    if(st.reach){ const rp=proj(st.reach.x, st.reach.y, st.reach.z);
+      if(rp){ const bl=st.blend==null?1:st.blend; pts.rk=[ pts.rk[0]+(rp[0]-pts.rk[0])*bl, pts.rk[1]+(rp[1]-pts.rk[1])*bl ]; } }
     const w = m => Math.max(0.9, m*s);
     const L=(a,b,col,wm)=>`<line x1="${pts[a][0].toFixed(1)}" y1="${pts[a][1].toFixed(1)}" x2="${pts[b][0].toFixed(1)}" y2="${pts[b][1].toFixed(1)}" stroke="${col}" stroke-width="${w(wm).toFixed(1)}" stroke-linecap="round"/>`;
     const shadow = `<ellipse cx="${anchor[0]}" cy="${anchor[1]}" rx="${(0.26*s).toFixed(1)}" ry="${(0.08*s).toFixed(1)}" fill="rgba(0,0,0,.32)"/>`;
@@ -437,7 +441,7 @@ export function mountProCourt(container, opts){
         movers.push({p:hitter,from:{...P[hitter]},to:{...st.from},t0:tFeed+0.05,t1:Math.max(tFeed+0.12,contact-0.04)});
         P[hitter]={...st.from};
         poses.push({p:"C",pose:"serve",t0:tFeed-0.12,t1:tFeed+0.3});
-        poses.push({p:hitter,pose:sh.pose,t0:contact-0.22,t1:contact+0.2});
+        poses.push({p:hitter,pose:sh.pose,t0:contact-0.22,t1:contact+0.2,reach:{x:cp.x,y:cp.y,z:cp.z}});
       }else if(chained){
         // rally continuity: arrive DURING the incoming flight and take the
         // shuttle out of the air the instant it reaches the contact point
@@ -447,14 +451,14 @@ export function mountProCourt(container, opts){
         const t1=Math.min(contact-0.05, t0+clamp(dist2(P[hitter],st.from)/5,0.12,1.2));
         movers.push({p:hitter,from:{...P[hitter]},to:{...st.from},t0,t1:Math.max(t1,t0+0.08)});
         P[hitter]={...st.from};
-        poses.push({p:hitter,pose:sh.pose,t0:contact-0.22,t1:contact+0.2});
+        poses.push({p:hitter,pose:sh.pose,t0:contact-0.22,t1:contact+0.2,reach:{x:cp.x,y:cp.y,z:cp.z}});
       }else{
         const t0=Math.max(avail[hitter], prevFlight?prevFlight.t1:0);
         const runDur=clamp(dist2(P[hitter],st.from)/5,0.25,1.2);
         movers.push({p:hitter,from:{...P[hitter]},to:{...st.from},t0,t1:t0+runDur});
         P[hitter]={...st.from};
         contact=t0+runDur+0.16; seg0=t0;
-        poses.push({p:hitter,pose:sh.pose,t0:t0+runDur,t1:contact+0.2});
+        poses.push({p:hitter,pose:sh.pose,t0:t0+runDur,t1:contact+0.2,reach:{x:cp.x,y:cp.y,z:cp.z}});
       }
       avail[hitter]=contact+0.2;
       // if the NEXT shot is played from this landing spot, the shuttle never
@@ -542,6 +546,7 @@ export function mountProCourt(container, opts){
         const inK=clamp((t-pe.t0)/0.15,0,1), outK=clamp((t-pe.t1)/0.15,0,1);
         s.pose=pe.pose; s.poseFrom = s.moving?"run":"ready"; s.blend = inK;
         if(t>pe.t1) s.blend = 1-outK;
+        if(pe.reach) s.reach = pe.reach;   // strike: pull the racket onto the real contact point
       }
     });
     const shuttles=[];
