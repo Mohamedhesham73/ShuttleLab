@@ -136,6 +136,11 @@ export function renderLeaderboard(){
     const pending = ladder && ladder.pending;
     const meId = String(state.user.id);
     const myIdx = order.indexOf(meId);
+    // a player sees only their own name — every other player is hidden (coach sees all)
+    const showNameOf = id => coach || String(id)===meId;
+    const dispName   = id => showNameOf(id) ? nameOf(id) : "Player";
+    const winLabel   = id => coach ? nameOf(id).split(" ")[0] : (String(id)===meId ? "You" : "Opponent");
+    const bName      = id => coach ? nameOf(id) : (String(id)===meId ? "You" : "Player");
 
     const resolve = (winnerId)=>{
       const c=pending.challengerId, d=pending.defenderId;
@@ -151,26 +156,29 @@ export function renderLeaderboard(){
       const involved = pending && (String(pending.challengerId)===String(id) || String(pending.defenderId)===String(id));
       const medal = i===0?"#ffd34d":i===1?"#cfd6dd":i===2?"#e0a973":"var(--muted)";
       let action = "";
-      if(!pending && me && aboveId){ action = `<button class="btn" data-chal="${esc(aboveId)}" style="padding:6px 11px;font-size:12px;">⚔ Challenge ${esc(nameOf(aboveId).split(" ")[0])}</button>`; }
+      if(!pending && me && aboveId){ action = `<button class="btn" data-chal="${esc(aboveId)}" style="padding:6px 11px;font-size:12px;">⚔ Challenge ${coach ? esc(nameOf(aboveId).split(" ")[0]) : "up"}</button>`; }
       else if(pending && involved && (meId===String(pending.challengerId) || meId===String(pending.defenderId))){
         // either of the two players reports the winner
-        action = `<div style="display:flex;gap:6px;flex-wrap:wrap;"><button class="btn pri" data-win="${esc(pending.challengerId)}" style="padding:5px 9px;font-size:11px;">${esc(nameOf(pending.challengerId).split(" ")[0])} won</button><button class="btn" data-win="${esc(pending.defenderId)}" style="padding:5px 9px;font-size:11px;">${esc(nameOf(pending.defenderId).split(" ")[0])} won</button></div>`;
+        action = `<div style="display:flex;gap:6px;flex-wrap:wrap;"><button class="btn pri" data-win="${esc(pending.challengerId)}" style="padding:5px 9px;font-size:11px;">${esc(winLabel(pending.challengerId))} won</button><button class="btn" data-win="${esc(pending.defenderId)}" style="padding:5px 9px;font-size:11px;">${esc(winLabel(pending.defenderId))} won</button></div>`;
       } else if(involved){ action = `<span class="muted" style="font-size:11px;">in a challenge…</span>`; }
       return `<div class="card" style="display:flex;align-items:center;gap:12px;padding:11px 13px;${me?'border-color:var(--brand);box-shadow:0 0 0 1px var(--brand) inset;':''}">
         <div style="width:24px;text-align:center;font-weight:700;font-size:16px;color:${medal};">${i+1}</div>
-        ${avatar(nameOf(id), photoOf(id), 30)}
-        <div style="flex:1;min-width:0;"><div class="disp" style="font-size:15px;">${esc(nameOf(id))}${me?' <span class="muted" style="font-size:11px;">(you)</span>':''}</div><div class="muted" style="font-size:11px;">OVR ${overallOf(id)||"—"}</div></div>
+        ${showNameOf(id) ? avatar(nameOf(id), photoOf(id), 30) : ghost(30)}
+        <div style="flex:1;min-width:0;"><div class="disp" style="font-size:15px;">${esc(dispName(id))}${me?' <span class="muted" style="font-size:11px;">(you)</span>':''}</div><div class="muted" style="font-size:11px;">OVR ${overallOf(id)||"—"}</div></div>
         ${action}
       </div>`;
     }).join("");
 
     const banner = pending
-      ? `<div class="card" style="padding:12px 14px;margin-bottom:12px;border-color:var(--brand);"><span style="font-size:14px;">⚔ <b>${esc(nameOf(pending.challengerId))}</b> challenged <b>${esc(nameOf(pending.defenderId))}</b>.</span><div class="muted" style="font-size:12px;margin-top:3px;">Play it on court — then either player taps who won. Winner takes the higher rung.</div></div>`
+      ? `<div class="card" style="padding:12px 14px;margin-bottom:12px;border-color:var(--brand);"><span style="font-size:14px;">⚔ <b>${esc(bName(pending.challengerId))}</b> challenged <b>${esc(bName(pending.defenderId))}</b>.</span><div class="muted" style="font-size:12px;margin-top:3px;">Play it on court — then either player taps who won. Winner takes the higher rung.</div></div>`
       : `<div class="muted" style="font-size:12px;margin-bottom:12px;">Challenge the player one rung above you. Win on court, climb the ladder. Tap your own row to challenge up.</div>`;
+
+    const note = coach ? "" : `<div class="muted" style="font-size:12px;margin-bottom:10px;">Other players' names are hidden — you see the ladder and your own place.</div>`;
 
     view.innerHTML = `
       <div class="logo-txt" style="font-size:20px;margin-bottom:12px;">The Ladder</div>
       ${tabsHtml()}
+      ${note}
       ${banner}
       <div style="display:flex;flex-direction:column;gap:8px;">${rows}</div>
       ${coach&&pending?`<button class="btn" id="ladCancel" style="margin-top:12px;padding:6px 12px;font-size:12px;">Cancel the challenge</button>`:""}

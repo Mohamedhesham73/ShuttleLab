@@ -184,6 +184,7 @@ export function renderMatches(){
   function assignLabel(v){
     if(v.assignedTo === "team") return "Shared with the whole team";
     if(Array.isArray(v.assignedTo) && v.assignedTo.length){
+      if(!coach) return "Shared with you";   // players never see co-assignees' names
       const names = v.assignedTo.map(id => { const u = state.roster.find(x=>String(x.id)===String(id)); return u ? u.name : "?"; });
       return "Sent to " + names.join(", ");
     }
