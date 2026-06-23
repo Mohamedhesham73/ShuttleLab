@@ -30,7 +30,7 @@ let VW=VW0, VH=VH0;                    // live viewBox — swaps to portrait whi
 // from this racket contact point — never from the player's chest.
 const SHOTS = {
   servelow: { name:"Low serve",   serve:true, z0:1.05, h:0.18, dur:1.05, pose:"serve", reach:0.35 },
-  servehigh:{ name:"High serve",  serve:true, z0:1.05, h:6.0,  dur:2.3,  pose:"serve", reach:0.35 },
+  servehigh:{ name:"High serve",  serve:true, z0:1.05, h:3.6,  dur:1.6,  pose:"serve", reach:0.35 },
   serveflick:{name:"Flick serve", serve:true, z0:1.05, h:2.6,  dur:1.35, pose:"serve", reach:0.35 },
   clear:    { name:"Clear",            z0:2.7,  h:4.4,  dur:1.65, pose:"overhead", reach:0.3 },
   attclear: { name:"Attacking clear",  z0:2.7,  h:2.1,  dur:1.1,  pose:"overhead", reach:0.3 },
@@ -98,13 +98,12 @@ const inCourt=(cat,x,y)=>{ const dbl=cat!=="singles"; const a=dbl?0:CT.SIN, b=db
 // tr.z1 = arrival height (0 = lands on the floor; contact height when the
 // next player takes it straight out of the air)
 function flightPos(tr,k){ return { x:tr.x1+(tr.x2-tr.x1)*k, y:tr.y1+(tr.y2-tr.y1)*k, z:tr.z0*(1-k)+(tr.z1||0)*k+tr.h*Math.sin(Math.PI*k) }; }
-// where the racket actually meets the shuttle: the player's body stands at
-// st.from, the contact point is `reach` metres toward the target at height z0
+// the shuttle launches from EXACTLY where the coach tapped "hit from"
+// (st.from), only lifted to the shot's contact height z0 — the arc starts
+// at the player, no forward offset.
 function contactPoint(st){
   const sh=SHOTS[st.shot]||SHOTS.clear;
-  const dx=st.to.x-st.from.x, dy=st.to.y-st.from.y, dl=Math.hypot(dx,dy)||1;
-  const r=sh.reach||0.3;
-  return { x:st.from.x+dx/dl*r, y:st.from.y+dy/dl*r, z:sh.z0 };
+  return { x:st.from.x, y:st.from.y, z:sh.z0 };
 }
 // lift any net-crossing trajectory so it clears the real tape (1.55 m)
 function clearNet(tr){
