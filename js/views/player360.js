@@ -100,6 +100,32 @@ function buildTests(sessions){
   return card("Tests & athlete", body, "dash", "Full dashboard ›");
 }
 
+function buildTraining(training){
+  const rows = (training || []).slice().sort((a,b) => (b.ts||0)-(a.ts||0)).slice(0,5);
+  const body = rows.length
+    ? rows.map(t => `<div style="padding:8px 0;border-top:1px solid var(--line);">
+        <div class="muted" style="font-size:12px;">${esc(t.byName || "Coach")} · ${esc(fmtDate(t.dateISO))}</div>
+        <div style="font-size:14px;white-space:pre-wrap;">${esc(t.text || "")}</div></div>`).join("")
+    : `<div class="muted" style="font-size:13px;">No training logged yet.</div>`;
+  return card("Training log", body, "train", "Open ›");
+}
+
+function buildPlan(plan){
+  const target = plan && plan.target;
+  const blocks = (plan && Array.isArray(plan.blocks)) ? plan.blocks : [];
+  const tgt = target
+    ? `<div style="border-left:3px solid var(--brand);padding:6px 12px;margin-bottom:10px;">
+        <div class="muted" style="font-size:11px;margin-bottom:2px;">Season target</div>
+        <div style="font-size:14px;line-height:1.5;white-space:pre-wrap;">${esc(target)}</div></div>`
+    : `<div class="muted" style="font-size:13px;margin-bottom:10px;">No season target set.</div>`;
+  const ph = blocks.length
+    ? `<div class="muted" style="font-size:11px;margin-bottom:4px;">Phases</div>` +
+      blocks.slice(0,4).map(b => `<div style="display:flex;justify-content:space-between;font-size:13px;padding:2px 0;">
+        <span>${esc(b.title || "")}</span><span class="muted">${esc(b.start || "")}${b.end ? " → " + esc(b.end) : ""}</span></div>`).join("")
+    : `<div class="muted" style="font-size:13px;">No phases yet.</div>`;
+  return card("Season plan", tgt + ph, "train", "Open ›");
+}
+
 export function renderPlayer360(){
   const view = document.getElementById("view");
   // coach-only: anyone else falls back to their own dashboard
@@ -120,7 +146,9 @@ export function renderPlayer360(){
     view.innerHTML =
       buildHeader(u, name, sessions) +
       buildChips(id, sessions, training, ladder, drills, videos) +
-      buildTests(sessions);
+      buildTests(sessions) +
+      buildTraining(training) +
+      buildPlan(plan);
     wire();
   };
 
@@ -142,4 +170,5 @@ export function renderPlayer360(){
   state.unsub.push(listenDrills((arr, err) => { if(!err){ drills = arr || []; draw(); } }));
   state.unsub.push(listenVideos((arr, err) => { if(!err){ videos = arr || []; draw(); } }));
   state.unsub.push(listenLadder((d, err) => { if(!err){ ladder = d || null; draw(); } }));
+  state.unsub.push(listenPlan(id, (p, err) => { if(!err){ plan = p || null; draw(); } }));
 }
