@@ -12,6 +12,7 @@ import { renderMatches } from "./views/matches.js";
 import { renderLeaderboard } from "./views/leaderboard.js";
 import { renderMindRoom } from "./views/mindroom.js";
 import { renderSupport } from "./views/support.js";
+import { renderPlayer360 } from "./views/player360.js";
 
 const VIEWS = {
   dash: renderDashboard,
@@ -22,7 +23,8 @@ const VIEWS = {
   matches: renderMatches,
   board: renderLeaderboard,
   mind: renderMindRoom,
-  support: renderSupport
+  support: renderSupport,
+  p360: renderPlayer360
 };
 
 function renderApp(){

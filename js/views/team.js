@@ -65,7 +65,7 @@ export function renderTeam(){
 
     document.getElementById("boardSel").onchange = (e)=>{ board = e.target.value; draw(); };
     document.querySelectorAll("[data-id]").forEach(el=>{
-      el.onclick = ()=>navigate("dash", { targetId:el.dataset.id, targetName:el.dataset.name });
+      el.onclick = ()=>navigate("p360", { targetId:el.dataset.id, targetName:el.dataset.name });
     });
   };
 

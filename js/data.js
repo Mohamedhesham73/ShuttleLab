@@ -205,6 +205,15 @@ export function sendChat(channel, fromUid, text){
     { channelId:channel.id, fromUid:String(fromUid), text:String(text), ts:Date.now(), readers:channel.readers });
 }
 
+// All chat messages this user may read (no channel filter) — for activity
+// summaries like Player 360. Same query-by-readers pattern as listenChat so the
+// security rule (uid in readers) can prove the query safe.
+export function listenCoachChatAll(uid, cb){
+  return onSnapshot(query(collection(db,"chatMessages"), where("readers","array-contains",String(uid))),
+    s=>{ const a=[]; s.forEach(d=>a.push({ id:d.id, ...d.data() })); cb(a); },
+    err=>cb(null, err));
+}
+
 // Fitness progress for a player. Query by readers (same reason as listenChat),
 // filter to the player client-side.
 export function listenProgress(playerUid, uid, cb){
