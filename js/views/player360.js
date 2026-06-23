@@ -145,6 +145,28 @@ function buildDrillsFilm(id, drills, videos){
   return card("Drills & film", body);
 }
 
+function buildSupport(playerUid, channels, chats, progress){
+  if(!playerUid){
+    return card("Support team", `<div class="muted" style="font-size:13px;">No linked account.</div>`, "support", "Open ›");
+  }
+  const staff = assignedStaff(state.roster, playerUid);
+  const pc = playerChannels(channels, playerUid);
+  const mentalIds  = pc.filter(c => c.type==="coach_mental"  || c.type==="mental_player").map(c => c.id);
+  const fitnessIds = pc.filter(c => c.type==="coach_fitness" || c.type==="fitness_player").map(c => c.id);
+  const mLast = lastTsForChannels(chats, mentalIds);
+  const fChat = lastTsForChannels(chats, fitnessIds);
+  const fProg = newest(progress, "ts");
+  const fLast = (Math.max(fChat || 0, fProg ? (fProg.ts || 0) : 0)) || null;
+  const when = ts => ts ? "last " + fmtDate(new Date(ts).toISOString().slice(0,10)) : "no activity";
+  const line = (role, s, ts) => s
+    ? `<div style="display:flex;justify-content:space-between;font-size:14px;padding:6px 0;border-top:1px solid var(--line);">
+        <span>${role}: <b>${esc(s.name)}</b></span>
+        <span class="muted" style="font-size:12px;">${when(ts)}</span></div>`
+    : `<div class="muted" style="font-size:14px;padding:6px 0;border-top:1px solid var(--line);">No ${role.toLowerCase()} assigned yet.</div>`;
+  const body = line("Mental coach", staff.mental, mLast) + line("Fitness trainer", staff.fitness, fLast);
+  return card("Support team", body, "support", "Open ›");
+}
+
 export function renderPlayer360(){
   const view = document.getElementById("view");
   // coach-only: anyone else falls back to their own dashboard
@@ -168,7 +190,8 @@ export function renderPlayer360(){
       buildTests(sessions) +
       buildTraining(training) +
       buildPlan(plan) +
-      buildDrillsFilm(id, drills, videos);
+      buildDrillsFilm(id, drills, videos) +
+      buildSupport(playerUid, channels, chats, progress);
     wire();
   };
 
@@ -191,4 +214,7 @@ export function renderPlayer360(){
   state.unsub.push(listenVideos((arr, err) => { if(!err){ videos = arr || []; draw(); } }));
   state.unsub.push(listenLadder((d, err) => { if(!err){ ladder = d || null; draw(); } }));
   state.unsub.push(listenPlan(id, (p, err) => { if(!err){ plan = p || null; draw(); } }));
+  state.unsub.push(listenMyChannels(state.uid, (arr, err) => { if(!err){ channels = arr || []; draw(); } }));
+  state.unsub.push(listenCoachChatAll(state.uid, (arr, err) => { if(!err){ chats = arr || []; draw(); } }));
+  if(playerUid) state.unsub.push(listenProgress(playerUid, state.uid, (arr, err) => { if(!err){ progress = arr || []; draw(); } }));
 }
