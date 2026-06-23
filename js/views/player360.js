@@ -126,6 +126,25 @@ function buildPlan(plan){
   return card("Season plan", tgt + ph, "train", "Open ›");
 }
 
+function buildDrillsFilm(id, drills, videos){
+  const ds = assignedToPlayer(drills, id).slice().sort((a,b) => (b.ts||0)-(a.ts||0));
+  const vs = assignedToPlayer(videos, id).slice().sort((a,b) => (b.ts||0)-(a.ts||0));
+  const list = (arr, empty, fmt) => arr.length
+    ? arr.slice(0,4).map(fmt).join("")
+    : `<div class="muted" style="font-size:13px;">${empty}</div>`;
+  const dBody = list(ds, "No drills assigned.", d =>
+    `<div style="font-size:14px;padding:3px 0;">${esc(d.title || "Drill")}${d.assignedTo==="team" ? ` <span class="muted" style="font-size:11px;">· team</span>` : ""}</div>`);
+  const vBody = list(vs, "No film assigned.", v =>
+    `<div style="font-size:14px;padding:3px 0;">${esc(v.title || v.name || "Video")}</div>`);
+  const body = `<div class="disp" style="font-size:13px;margin-bottom:4px;">Drills (${ds.length})</div>${dBody}
+    <div class="disp" style="font-size:13px;margin:10px 0 4px;">Film (${vs.length})</div>${vBody}
+    <div style="display:flex;gap:8px;margin-top:10px;">
+      <span class="btn" data-p360go="library" style="padding:4px 10px;font-size:11px;cursor:pointer;">Library ›</span>
+      <span class="btn" data-p360go="matches" style="padding:4px 10px;font-size:11px;cursor:pointer;">Film room ›</span>
+    </div>`;
+  return card("Drills & film", body);
+}
+
 export function renderPlayer360(){
   const view = document.getElementById("view");
   // coach-only: anyone else falls back to their own dashboard
@@ -148,7 +167,8 @@ export function renderPlayer360(){
       buildChips(id, sessions, training, ladder, drills, videos) +
       buildTests(sessions) +
       buildTraining(training) +
-      buildPlan(plan);
+      buildPlan(plan) +
+      buildDrillsFilm(id, drills, videos);
     wire();
   };
 
